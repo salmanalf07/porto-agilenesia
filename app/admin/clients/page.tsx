@@ -157,7 +157,7 @@ export default function ClientsPage() {
     if (currentLogoFile) {
       const fileExtension = currentLogoFile.name.split(".").pop()
       const fileName = `${formData.name.toLowerCase().replace(/\s/g, "-")}-${Date.now()}.${fileExtension}`
-      const { data, error } = await supabase.storage.from("client-logos").upload(fileName, currentLogoFile, {
+      const { data, error } = await supabase.storage.from("logoclients").upload(fileName, currentLogoFile, {
         cacheControl: "3600",
         upsert: false,
       })
@@ -168,7 +168,7 @@ export default function ClientsPage() {
         return
       }
       // Get public URL of the uploaded file
-      const { data: publicUrlData } = supabase.storage.from("client-logos").getPublicUrl(data.path)
+      const { data: publicUrlData } = supabase.storage.from("logoclients").getPublicUrl(data.path)
       finalLogoUrl = publicUrlData.publicUrl
     }
 
@@ -220,9 +220,10 @@ export default function ClientsPage() {
       try {
         // Extract the file path from the public URL
         const urlParts = clientToDelete.logoUrl.split("/")
-        const filePath = urlParts.slice(urlParts.indexOf("client-logos") + 1).join("/")
+        // The path in storage starts after the bucket name, e.g., 'logoclients/path/to/file.ext'
+        const filePath = urlParts.slice(urlParts.indexOf("logoclients") + 1).join("/")
 
-        const { error: storageError } = await supabase.storage.from("client-logos").remove([filePath])
+        const { error: storageError } = await supabase.storage.from("logoclients").remove([filePath])
         if (storageError) {
           console.error("Error deleting logo from storage:", storageError)
           // Continue with client deletion even if logo deletion fails
