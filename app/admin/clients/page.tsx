@@ -1,9 +1,7 @@
 "use client"
 
 import { useCallback } from "react"
-
 import type React from "react"
-
 import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -26,7 +24,7 @@ import {
 import { ThemeToggleButton } from "@/components/theme-toggle-button"
 import { AgilenesiaLogo } from "@/components/agilenesia-logo"
 import { FadeInUp } from "@/components/page-transition"
-import { clients as initialClients, type Client } from "@/lib/data"
+import type { Client } from "@/lib/data"
 import { getUserSession, logout } from "@/app/actions"
 import Link from "next/link"
 import {
@@ -42,10 +40,11 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import type { User } from "next-auth"
-import { LogoFileUploader } from "@/components/logo-file-uploader" // Import the new component
+import { LogoFileUploader } from "@/components/logo-file-uploader"
+import { supabase } from "@/lib/supabaseClient"
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<Client[]>(initialClients)
+  const [clients, setClients] = useState<Client[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingClient, setEditingClient] = useState<Client | null>(null)
@@ -61,14 +60,14 @@ export default function ClientsPage() {
   const [formData, setFormData] = useState({
     name: "",
     industry: "",
-    logoUrl: "", // This will store the base64 string or external URL
+    logoUrl: "",
     status: "active" as "active" | "inactive",
   })
 
-  // State for the actual file object and its preview URL from the uploader component
   const [currentLogoFile, setCurrentLogoFile] = useState<File | null>(null)
   const [currentLogoPreviewUrl, setCurrentLogoPreviewUrl] = useState<string | null>(null)
 
+  // Fetch user session on component mount
   useEffect(() => {
     const fetchUser = async () => {
       const session = await getUserSession()
@@ -77,16 +76,29 @@ export default function ClientsPage() {
     fetchUser()
   }, [])
 
+  // Fetch clients from Supabase
+  const fetchClients = useCallback(async () => {
+    const { data, error } = await supabase.from("clients").select("*").order("lastUpdated", { ascending: false })
+    if (error) {
+      console.error("Error fetching clients:", error)
+      // Optionally, show a toast notification here
+    } else {
+      setClients(data as Client[])
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchClients()
+  }, [fetchClients])
+
   // Filter and paginate clients
   const filteredClients = useMemo(() => {
     return clients.filter((client) => {
-      // Apply search filter
       const matchesSearch =
         searchQuery === "" ||
         client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         client.industry.toLowerCase().includes(searchQuery.toLowerCase())
 
-      // Apply status filter
       const matchesStatus = statusFilter === "all" || client.status === statusFilter
 
       return matchesSearch && matchesStatus
@@ -122,56 +134,113 @@ export default function ClientsPage() {
     setFormData({
       name: client.name,
       industry: client.industry,
-      logoUrl: client.logoUrl || "", // Pass existing logo URL to the form
+      logoUrl: client.logoUrl || "",
       status: client.status,
     })
-    setCurrentLogoFile(null) // Clear file object
-    setCurrentLogoPreviewUrl(client.logoUrl || null) // Set preview from existing URL
+    setCurrentLogoFile(null)
+    setCurrentLogoPreviewUrl(client.logoUrl || null)
     setIsDialogOpen(true)
   }
 
   const handleLogoChange = useCallback((file: File | null, previewUrl: string | null) => {
     setCurrentLogoFile(file)
     setCurrentLogoPreviewUrl(previewUrl)
-    setFormData((prev) => ({ ...prev, logoUrl: previewUrl || "" })) // Update formData with the new preview URL
+    setFormData((prev) => ({ ...prev, logoUrl: previewUrl || "" }))
   }, [])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Use the currentLogoPreviewUrl as the logoUrl for submission
-    const finalLogoUrl = currentLogoPreviewUrl || ""
+    let finalLogoUrl = currentLogoPreviewUrl || ""
+
+    // If a new file is selected, upload it to Supabase Storage
+    if (currentLogoFile) {
+      const fileExtension = currentLogoFile.name.split(".").pop()
+      const fileName = `${formData.name.toLowerCase().replace(/\s/g, "-")}-${Date.now()}.${fileExtension}`
+      const { data, error } = await supabase.storage.from("client-logos").upload(fileName, currentLogoFile, {
+        cacheControl: "3600",
+        upsert: false,
+      })
+
+      if (error) {
+        console.error("Error uploading logo:", error)
+        // Optionally, show a toast notification
+        return
+      }
+      // Get public URL of the uploaded file
+      const { data: publicUrlData } = supabase.storage.from("client-logos").getPublicUrl(data.path)
+      finalLogoUrl = publicUrlData.publicUrl
+    }
 
     if (editingClient) {
-      // Update existing client
-      const updatedClients = clients.map((client) =>
-        client.id === editingClient.id
-          ? {
-              ...client,
-              ...formData,
-              logoUrl: finalLogoUrl,
-              lastUpdated: new Date().toISOString(),
-            }
-          : client,
-      )
-      setClients(updatedClients)
-    } else {
-      // Add new client
-      const newClient: Client = {
-        id: `client_${Date.now()}`,
-        ...formData,
-        logoUrl: finalLogoUrl,
-        lastUpdated: new Date().toISOString(),
+      // Update existing client in Supabase
+      const { error } = await supabase
+        .from("clients")
+        .update({
+          name: formData.name,
+          industry: formData.industry,
+          logoUrl: finalLogoUrl,
+          status: formData.status,
+          lastUpdated: new Date().toISOString(),
+        })
+        .eq("id", editingClient.id)
+
+      if (error) {
+        console.error("Error updating client:", error)
+        // Optionally, show a toast notification
+      } else {
+        fetchClients() // Re-fetch clients to update the list
       }
-      setClients([...clients, newClient])
+    } else {
+      // Add new client to Supabase
+      const { error } = await supabase.from("clients").insert({
+        name: formData.name,
+        industry: formData.industry,
+        logoUrl: finalLogoUrl,
+        status: formData.status,
+        lastUpdated: new Date().toISOString(),
+      })
+
+      if (error) {
+        console.error("Error adding client:", error)
+        // Optionally, show a toast notification
+      } else {
+        fetchClients() // Re-fetch clients to update the list
+      }
     }
 
     setIsDialogOpen(false)
     resetForm()
   }
 
-  const handleDelete = (clientId: string) => {
-    setClients(clients.filter((client) => client.id !== clientId))
+  const handleDelete = async (clientId: string) => {
+    // First, get the client to potentially delete its logo from storage
+    const clientToDelete = clients.find((client) => client.id === clientId)
+    if (clientToDelete?.logoUrl) {
+      try {
+        // Extract the file path from the public URL
+        const urlParts = clientToDelete.logoUrl.split("/")
+        const filePath = urlParts.slice(urlParts.indexOf("client-logos") + 1).join("/")
+
+        const { error: storageError } = await supabase.storage.from("client-logos").remove([filePath])
+        if (storageError) {
+          console.error("Error deleting logo from storage:", storageError)
+          // Continue with client deletion even if logo deletion fails
+        }
+      } catch (e) {
+        console.error("Failed to parse logo URL or delete from storage:", e)
+      }
+    }
+
+    // Delete client from Supabase
+    const { error } = await supabase.from("clients").delete().eq("id", clientId)
+
+    if (error) {
+      console.error("Error deleting client:", error)
+      // Optionally, show a toast notification
+    } else {
+      fetchClients() // Re-fetch clients to update the list
+    }
   }
 
   const formatDate = (dateString: string) => {
@@ -207,7 +276,7 @@ export default function ClientsPage() {
             {currentUser && (
               <Button
                 variant="outline"
-                className="border-primary text-primary hover:bg-primary/10"
+                className="border-primary text-primary hover:bg-primary/10 bg-transparent"
                 onClick={() => logout()}
               >
                 Logout
