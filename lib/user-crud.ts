@@ -6,7 +6,7 @@ import type { User } from "./data" // Menggunakan interface User yang sudah ada
  * @returns Array of User objects or an empty array if an error occurs.
  */
 export async function getUsers(): Promise<User[]> {
-  const { data, error } = await supabase.from("users").select("*").order("lastUpdated", { ascending: false })
+  const { data, error } = await supabase.from("users").select("*, clients(name)").order("lastUpdated", { ascending: false })
   if (error) {
     console.error("Error fetching users:", error)
     return []

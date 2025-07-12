@@ -39,6 +39,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { getUsers, createUser, updateUser, deleteUser } from "@/lib/user-crud" // Import fungsi CRUD baru
+import { supabase } from "@/lib/supabaseClient"
+import bcrypt from "bcryptjs"
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([])
@@ -50,6 +52,7 @@ export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all")
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "client">("all")
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -65,12 +68,24 @@ export default function UsersPage() {
 
   // Fetch user session on component mount
   useEffect(() => {
-    const fetchUser = async () => {
-      const session = await getUserSession()
-      setCurrentUser(session)
+  const fetchUser = async () => {
+    const session = await getUserSession()
+    setCurrentUser(session)
+  }
+
+  const fetchClients = async () => {
+    const { data, error } = await supabase.from("clients").select("id, name")
+    if (error) {
+      console.error("Failed to fetch clients:", error.message)
+    } else {
+      setClients(data ?? [])
     }
-    fetchUser()
-  }, [])
+  }
+
+  fetchUser()
+  fetchClients()
+}, [])
+
 
   // Fetch users from Supabase
   const fetchUsers = useCallback(async () => {
@@ -125,45 +140,39 @@ export default function UsersPage() {
     setEditingUser(null)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
 
-    const userPayload = {
-      name: formData.name,
-      email: formData.email,
-      role: formData.role,
-      status: formData.status,
-      clientId: formData.clientId === "none" ? undefined : formData.clientId,
-      // Password is NOT handled here. It should be managed by Supabase Auth.
-      // For new users, you'd typically use supabase.auth.signUp or an admin function.
-      password: editingUser?.password || "placeholder", // Keep existing password or use placeholder for type safety
-    }
+  // Enkripsi password hanya jika user baru
+  let password = editingUser?.password || "placeholder"
 
-    if (editingUser) {
-      // Update existing user
-      const updatedUser = await updateUser(editingUser.id, userPayload)
-      if (updatedUser) {
-        fetchUsers() // Re-fetch users to update the list
-        // Optionally, show a success toast
-      } else {
-        // Optionally, show an error toast
-      }
-    } else {
-      // Add new user
-      // WARNING: This only adds to the 'users' table, not Supabase Auth.
-      // For a real application, new user creation should go through Supabase Auth.
-      const newUser = await createUser(userPayload as Omit<User, "id" | "lastUpdated">)
-      if (newUser) {
-        fetchUsers() // Re-fetch users to update the list
-        // Optionally, show a success toast
-      } else {
-        // Optionally, show an error toast
-      }
-    }
-
-    setIsDialogOpen(false)
-    resetForm()
+  // Enkripsi password hanya saat create user (bukan update)
+  if (!editingUser) {
+    const salt = await bcrypt.genSalt(10)
+    password = await bcrypt.hash(password, salt)
   }
+
+  const userPayload = {
+    name: formData.name,
+    email: formData.email,
+    role: formData.role,
+    status: formData.status,
+    clientId: formData.clientId === "none" ? undefined : Number(formData.clientId),
+    password, // yang sudah di-hash
+  }
+
+  if (editingUser) {
+    const updatedUser = await updateUser(editingUser.id, userPayload)
+    if (updatedUser) fetchUsers()
+  } else {
+    const newUser = await createUser(userPayload as Omit<User, "id" | "lastUpdated">)
+    if (newUser) fetchUsers()
+  }
+
+  setIsDialogOpen(false)
+  resetForm()
+}
+
 
   const handleEdit = (user: User) => {
     setEditingUser(user)
@@ -172,7 +181,7 @@ export default function UsersPage() {
       email: user.email,
       role: user.role,
       status: user.status,
-      clientId: user.clientId || "none",
+      clientId: String(user.clientId) || "none",
     })
     setIsDialogOpen(true)
   }
@@ -317,7 +326,7 @@ export default function UsersPage() {
                         <SelectContent className="max-h-60 overflow-y-auto">
                           <SelectItem value="none">None</SelectItem>
                           {clients.map((client) => (
-                            <SelectItem key={client.id} value={client.id}>
+                             <SelectItem key={client.id} value={String(client.id)}>
                               {client.name}
                             </SelectItem>
                           ))}
@@ -412,7 +421,7 @@ export default function UsersPage() {
                         <TableRow key={user.id}>
                           <TableCell className="font-medium">{user.name}</TableCell>
                           <TableCell>{user.email}</TableCell>
-                          <TableCell>{getClientNameById(user.clientId)}</TableCell>
+                          <TableCell>{user.clients?.name || "Unknown Client"}</TableCell>
                           <TableCell>
                             <Badge
                               variant={user.role === "admin" ? "default" : "secondary"}
