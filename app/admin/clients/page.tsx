@@ -149,51 +149,77 @@ export default function ClientsPage() {
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  e.preventDefault()
 
-    let finalLogoUrl = currentLogoPreviewUrl || ""
+  let finalLogoUrl = currentLogoPreviewUrl || ""
 
-    // If a new file is selected, upload it to Supabase Storage
-    if (currentLogoFile) {
-      const fileExtension = currentLogoFile.name.split(".").pop()
-      const fileName = `${formData.name.toLowerCase().replace(/\s/g, "-")}-${Date.now()}.${fileExtension}`
-      const { data, error } = await supabase.storage.from("logoclients").upload(fileName, currentLogoFile, {
+  // Jika ada file logo baru diunggah
+  if (currentLogoFile) {
+    // Jika sedang edit dan ada logo lama
+    if (editingClient?.logoUrl) {
+      // Ambil path relatif dari logo lama
+      const oldPath = editingClient.logoUrl.split("/").slice(-2).join("/") // nama file
+
+      // Hapus dari Supabase Storage
+      const { error: deleteError } = await supabase
+        .storage
+        .from("logoclients")
+        .remove([oldPath])
+
+      if (deleteError) {
+        console.error("Gagal menghapus logo lama:", deleteError.message)
+      }
+    }
+
+    // Upload file baru
+    const fileExtension = currentLogoFile.name.split(".").pop()
+    const rawFileName = `${formData.name.toLowerCase().replace(/\s/g, "-")}-${Date.now()}.${fileExtension}`
+    const fullPath = `clients/${rawFileName}`
+    const { data, error } = await supabase
+      .storage
+      .from("logoclients")
+      .upload(fullPath, currentLogoFile, {
         cacheControl: "3600",
         upsert: false,
       })
 
-      if (error) {
-        console.error("Error uploading logo:", error)
-        // Optionally, show a toast notification
-        return
-      }
-      // Get public URL of the uploaded file
-      const { data: publicUrlData } = supabase.storage.from("logoclients").getPublicUrl(data.path)
-      finalLogoUrl = publicUrlData.publicUrl
+    if (error) {
+      console.error("Error uploading logo baru:", error)
+      return
     }
 
-    if (editingClient) {
-      // Update existing client in Supabase
-      const { error } = await supabase
-        .from("clients")
-        .update({
-          name: formData.name,
-          industry: formData.industry,
-          logoUrl: finalLogoUrl,
-          status: formData.status,
-          lastUpdated: new Date().toISOString(),
-        })
-        .eq("id", editingClient.id)
+    // Dapatkan URL public logo baru
+    const { data: publicUrlData } = supabase
+      .storage
+      .from("logoclients")
+      .getPublicUrl(fullPath)
 
-      if (error) {
-        console.error("Error updating client:", error)
-        // Optionally, show a toast notification
-      } else {
-        fetchClients() // Re-fetch clients to update the list
-      }
+    finalLogoUrl = publicUrlData.publicUrl
+  }
+
+  if (editingClient) {
+    // Update data client
+    const { error } = await supabase
+      .from("clients")
+      .update({
+        name: formData.name,
+        industry: formData.industry,
+        logoUrl: finalLogoUrl,
+        status: formData.status,
+        lastUpdated: new Date().toISOString(),
+      })
+      .eq("id", editingClient.id)
+
+    if (error) {
+      console.error("Error updating client:", error)
     } else {
-      // Add new client to Supabase
-      const { error } = await supabase.from("clients").insert({
+      fetchClients()
+    }
+  } else {
+    // Tambahkan client baru
+    const { error } = await supabase
+      .from("clients")
+      .insert({
         name: formData.name,
         industry: formData.industry,
         logoUrl: finalLogoUrl,
@@ -201,48 +227,44 @@ export default function ClientsPage() {
         lastUpdated: new Date().toISOString(),
       })
 
-      if (error) {
-        console.error("Error adding client:", error)
-        // Optionally, show a toast notification
-      } else {
-        fetchClients() // Re-fetch clients to update the list
-      }
+    if (error) {
+      console.error("Error adding client:", error)
+    } else {
+      fetchClients()
     }
-
-    setIsDialogOpen(false)
-    resetForm()
   }
+
+  setIsDialogOpen(false)
+  resetForm()
+}
+
 
   const handleDelete = async (clientId: string) => {
-    // First, get the client to potentially delete its logo from storage
-    const clientToDelete = clients.find((client) => client.id === clientId)
-    if (clientToDelete?.logoUrl) {
-      try {
-        // Extract the file path from the public URL
-        const urlParts = clientToDelete.logoUrl.split("/")
-        // The path in storage starts after the bucket name, e.g., 'logoclients/path/to/file.ext'
-        const filePath = urlParts.slice(urlParts.indexOf("logoclients") + 1).join("/")
+  const clientToDelete = clients.find((client) => client.id === clientId)
+  if (!clientToDelete) return
 
-        const { error: storageError } = await supabase.storage.from("logoclients").remove([filePath])
-        if (storageError) {
-          console.error("Error deleting logo from storage:", storageError)
-          // Continue with client deletion even if logo deletion fails
-        }
-      } catch (e) {
-        console.error("Failed to parse logo URL or delete from storage:", e)
+  if (clientToDelete.logoUrl.includes("supabase.co/storage")) {
+    try {
+      const urlParts = clientToDelete.logoUrl.split("/")
+      const filePath = urlParts.slice(urlParts.indexOf("logoclients") + 1).join("/")
+
+      const { error: storageError } = await supabase.storage.from("logoclients").remove([filePath])
+      if (storageError) {
+        console.error("Error deleting logo from storage:", storageError)
       }
-    }
-
-    // Delete client from Supabase
-    const { error } = await supabase.from("clients").delete().eq("id", clientId)
-
-    if (error) {
-      console.error("Error deleting client:", error)
-      // Optionally, show a toast notification
-    } else {
-      fetchClients() // Re-fetch clients to update the list
+    } catch (e) {
+      console.error("Failed to parse logo URL or delete from storage:", e)
     }
   }
+
+  const { error } = await supabase.from("clients").delete().eq("id", clientId)
+  if (error) {
+    console.error("Error deleting client:", error)
+  } else {
+    fetchClients()
+  }
+}
+
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
