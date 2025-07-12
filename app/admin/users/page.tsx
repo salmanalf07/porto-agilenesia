@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,7 +24,7 @@ import {
 import { ThemeToggleButton } from "@/components/theme-toggle-button"
 import { AgilenesiaLogo } from "@/components/agilenesia-logo"
 import { FadeInUp } from "@/components/page-transition"
-import { users as initialUsers, clients, type User, getClientNameById } from "@/lib/data"
+import { clients, type User, getClientNameById } from "@/lib/data" // Tetap import clients dan User interface
 import { getUserSession, logout } from "@/app/actions"
 import Link from "next/link"
 import {
@@ -38,9 +38,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { getUsers, createUser, updateUser, deleteUser } from "@/lib/user-crud" // Import fungsi CRUD baru
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>(initialUsers)
+  const [users, setUsers] = useState<User[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
@@ -57,12 +58,12 @@ export default function UsersPage() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    password: "",
     role: "client" as "admin" | "client",
     status: "active" as "active" | "inactive",
     clientId: "none" as string,
   })
 
+  // Fetch user session on component mount
   useEffect(() => {
     const fetchUser = async () => {
       const session = await getUserSession()
@@ -70,6 +71,16 @@ export default function UsersPage() {
     }
     fetchUser()
   }, [])
+
+  // Fetch users from Supabase
+  const fetchUsers = useCallback(async () => {
+    const fetchedUsers = await getUsers()
+    setUsers(fetchedUsers)
+  }, [])
+
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers])
 
   // Filter and paginate users
   const filteredUsers = useMemo(() => {
@@ -107,7 +118,6 @@ export default function UsersPage() {
     setFormData({
       name: "",
       email: "",
-      password: "",
       role: "client",
       status: "active",
       clientId: "none",
@@ -115,32 +125,40 @@ export default function UsersPage() {
     setEditingUser(null)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    const userPayload = {
+      name: formData.name,
+      email: formData.email,
+      role: formData.role,
+      status: formData.status,
+      clientId: formData.clientId === "none" ? undefined : formData.clientId,
+      // Password is NOT handled here. It should be managed by Supabase Auth.
+      // For new users, you'd typically use supabase.auth.signUp or an admin function.
+      password: editingUser?.password || "placeholder", // Keep existing password or use placeholder for type safety
+    }
 
     if (editingUser) {
       // Update existing user
-      const updatedUsers = users.map((user) =>
-        user.id === editingUser.id
-          ? {
-              ...user,
-              ...formData,
-              clientId: formData.clientId === "none" ? undefined : formData.clientId,
-              password: formData.password || user.password, // Keep existing password if not changed
-              lastUpdated: new Date().toISOString(),
-            }
-          : user,
-      )
-      setUsers(updatedUsers)
+      const updatedUser = await updateUser(editingUser.id, userPayload)
+      if (updatedUser) {
+        fetchUsers() // Re-fetch users to update the list
+        // Optionally, show a success toast
+      } else {
+        // Optionally, show an error toast
+      }
     } else {
       // Add new user
-      const newUser: User = {
-        id: `user_${Date.now()}`,
-        ...formData,
-        clientId: formData.clientId === "none" ? undefined : formData.clientId,
-        lastUpdated: new Date().toISOString(),
+      // WARNING: This only adds to the 'users' table, not Supabase Auth.
+      // For a real application, new user creation should go through Supabase Auth.
+      const newUser = await createUser(userPayload as Omit<User, "id" | "lastUpdated">)
+      if (newUser) {
+        fetchUsers() // Re-fetch users to update the list
+        // Optionally, show a success toast
+      } else {
+        // Optionally, show an error toast
       }
-      setUsers([...users, newUser])
     }
 
     setIsDialogOpen(false)
@@ -152,7 +170,6 @@ export default function UsersPage() {
     setFormData({
       name: user.name,
       email: user.email,
-      password: "", // Don't pre-fill password for security
       role: user.role,
       status: user.status,
       clientId: user.clientId || "none",
@@ -160,8 +177,16 @@ export default function UsersPage() {
     setIsDialogOpen(true)
   }
 
-  const handleDelete = (userId: string) => {
-    setUsers(users.filter((user) => user.id !== userId))
+  const handleDelete = async (userId: string) => {
+    // WARNING: This only deletes from the 'users' table, not Supabase Auth.
+    // For a real application, user deletion should go through Supabase Admin API.
+    const success = await deleteUser(userId)
+    if (success) {
+      fetchUsers() // Re-fetch users to update the list
+      // Optionally, show a success toast
+    } else {
+      // Optionally, show an error toast
+    }
   }
 
   const formatDate = (dateString: string) => {
@@ -197,7 +222,7 @@ export default function UsersPage() {
             {currentUser && (
               <Button
                 variant="outline"
-                className="border-primary text-primary hover:bg-primary/10"
+                className="border-primary text-primary hover:bg-primary/10 bg-transparent"
                 onClick={() => logout()}
               >
                 Logout
@@ -246,18 +271,10 @@ export default function UsersPage() {
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         required
+                        disabled={!!editingUser} // Disable email edit for existing users
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="password">Password {editingUser && "(leave blank to keep current)"}</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        required={!editingUser}
-                      />
-                    </div>
+                    {/* Password field removed as it should be managed by Supabase Auth */}
                     <div>
                       <Label htmlFor="role">Role</Label>
                       <Select
