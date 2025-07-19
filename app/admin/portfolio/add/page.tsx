@@ -11,14 +11,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ThemeToggleButton } from "@/components/theme-toggle-button"
 import { AgilenesiaLogo } from "@/components/agilenesia-logo"
 import { FadeInUp } from "@/components/page-transition"
-import { clients } from "@/lib/data"
+import { clients, type User, getClientNameById } from "@/lib/data" // Tetap import clients dan User interface
 import { getUserSession, logout } from "@/app/actions"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { PlusIcon, XIcon, ArrowLeftIcon, SaveIcon } from "lucide-react"
-import type { User } from "@/lib/data"
 import { RichTextEditor } from "@/components/rich-text-editor"
 import { ProjectGalleryInput, type ProjectImageInput } from "@/components/project-gallery-input"
+import { supabase } from "@/lib/supabaseClient"
 
 interface TeamMember {
   name: string
@@ -28,6 +28,7 @@ interface TeamMember {
 
 export default function AddPortfolioPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const router = useRouter()
 
   const [formData, setFormData] = useState({
@@ -60,6 +61,17 @@ export default function AddPortfolioPage() {
         router.push("/")
       }
     }
+    const fetchClients = async () => {
+        const { data, error } = await supabase.from("clients").select("id, name")
+        if (error) {
+          console.error("Failed to fetch clients:", error.message)
+        } else {
+          setClients(data ?? [])
+        }
+      }
+    
+      fetchUser()
+      fetchClients()
     fetchUser()
   }, [router])
 
