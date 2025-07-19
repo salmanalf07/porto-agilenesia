@@ -19,8 +19,9 @@ import { ThumbnailGallery } from "@/components/thumbnail-gallery"
 import { ProjectGalleryInput } from "@/components/project-gallery-input"
 import { RichTextEditor } from "@/components/rich-text-editor"
 import { createProject } from "@/lib/portfolio-crud" // Import createProject
-import { getClients } from "@/lib/clients" // Import getClients
+import { clients, type User, getClientNameById } from "@/lib/data" // Tetap import clients dan User interface
 import type { Client } from "@/lib/data"
+import { supabase } from "@/lib/supabaseClient"
 
 interface TeamMemberFormState {
   name: string
@@ -31,7 +32,7 @@ interface TeamMemberFormState {
 
 export default function AddPortfolioPage() {
   const [currentUser, setCurrentUser] = useState<any>(null)
-  const [clients, setClients] = useState<Client[]>([])
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [formData, setFormData] = useState({
     title: "",
     clientId: "",
@@ -57,19 +58,19 @@ export default function AddPortfolioPage() {
       const session = await getUserSession()
       setCurrentUser(session)
     }
+
+      const fetchClients = async () => {
+        const { data, error } = await supabase.from("clients").select("id, name")
+        if (error) {
+          console.error("Failed to fetch clients:", error.message)
+        } else {
+          setClients(data ?? [])
+        }
+      }
+
+    fetchClients()
     fetchUser()
   }, [])
-
-  const fetchClients = useCallback(async () => {
-    const fetchedClients = await getClients()
-    if (fetchedClients) {
-      setClients(fetchedClients)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchClients()
-  }, [fetchClients])
 
   const handleAddProduct = () => {
     if (newProduct.trim() !== "" && !formData.products.includes(newProduct.trim())) {
