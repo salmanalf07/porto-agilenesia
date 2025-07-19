@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,16 +11,17 @@ import {
   PlusIcon,
   EditIcon,
   TrashIcon,
-  FolderOpenIcon,
+  FolderIcon,
   SearchIcon,
   FilterIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  EyeIcon,
 } from "lucide-react"
 import { ThemeToggleButton } from "@/components/theme-toggle-button"
 import { AgilenesiaLogo } from "@/components/agilenesia-logo"
 import { FadeInUp } from "@/components/page-transition"
-import type { Project } from "@/lib/data"
+import { projects as initialProjects, clients, type Project } from "@/lib/data" // Import clients
 import { getUserSession, logout } from "@/app/actions"
 import Link from "next/link"
 import {
@@ -34,20 +35,31 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { getProjects, deleteProject } from "@/lib/portfolio-crud" // Import new CRUD functions
-import { getClients } from "@/lib/client-crud" // Import getClients
+import { useRouter } from "next/navigation"
+import type { User } from "@/lib/data"
+
+// Extended Project type with status and lastUpdated
+interface PortfolioProject extends Project {
+  status: "published" | "draft" | "archived"
+  lastUpdated: string
+}
 
 export default function PortfolioPage() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [currentUser, setCurrentUser] = useState<any>(null)
-  const [clients, setClients] = useState<any[]>([]) // State for clients
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // Convert initial projects to include status and lastUpdated
+  const initialPortfolioProjects: PortfolioProject[] = initialProjects.map((project) => ({
+    ...project,
+    status: "published", // Default status
+    lastUpdated: new Date().toISOString(), // Default lastUpdated
+  }))
+
+  const [projects, setProjects] = useState<PortfolioProject[]>(initialPortfolioProjects)
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const router = useRouter()
 
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState("")
-  const [categoryFilter, setCategoryFilter] = useState("all")
-  const [clientFilter, setClientFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState<"all" | "published" | "draft" | "archived">("all")
+  const [clientFilter, setClientFilter] = useState<string>("all") // Changed from categoryFilter
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -57,33 +69,19 @@ export default function PortfolioPage() {
     const fetchUser = async () => {
       const session = await getUserSession()
       setCurrentUser(session)
+
+      // Redirect if not admin
+      if (session?.role !== "admin") {
+        router.push("/")
+      }
     }
     fetchUser()
+  }, [router])
+
+  // Get unique clients for filter
+  const filterableClients = useMemo(() => {
+    return ["all", ...clients.map((c) => c.id)] // Use client IDs for filter values
   }, [])
-
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    const fetchedProjects = await getProjects()
-    const fetchedClients = await getClients()
-
-    if (fetchedProjects) {
-      setProjects(fetchedProjects)
-    } else {
-      setError("Failed to load projects.")
-    }
-
-    if (fetchedClients) {
-      setClients(fetchedClients)
-    } else {
-      setError((prev) => (prev ? prev + " And failed to load clients." : "Failed to load clients."))
-    }
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
 
   // Filter and paginate projects
   const filteredProjects = useMemo(() => {
@@ -95,15 +93,15 @@ export default function PortfolioPage() {
         project.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.category.toLowerCase().includes(searchQuery.toLowerCase())
 
-      // Apply category filter
-      const matchesCategory = categoryFilter === "all" || project.category === categoryFilter
+      // Apply status filter
+      const matchesStatus = statusFilter === "all" || project.status === statusFilter
 
-      // Apply client filter
+      // Apply client filter (using clientName for display, but clientId for filtering)
       const matchesClient = clientFilter === "all" || project.clientId === clientFilter
 
-      return matchesSearch && matchesCategory && matchesClient
+      return matchesSearch && matchesStatus && matchesClient
     })
-  }, [projects, searchQuery, categoryFilter, clientFilter])
+  }, [projects, searchQuery, statusFilter, clientFilter]) // Changed categoryFilter to clientFilter
 
   // Calculate pagination
   const totalPages = Math.ceil(filteredProjects.length / itemsPerPage)
@@ -115,25 +113,11 @@ export default function PortfolioPage() {
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, categoryFilter, clientFilter])
+  }, [searchQuery, statusFilter, clientFilter]) // Changed categoryFilter to clientFilter
 
-  const handleDeleteProject = async (projectId: string) => {
-    const success = await deleteProject(projectId)
-    if (success) {
-      fetchData() // Re-fetch projects after deletion
-    } else {
-      alert("Failed to delete project. Please check console for details.")
-    }
+  const handleDelete = (projectId: string) => {
+    setProjects(projects.filter((project) => project.id !== projectId))
   }
-
-  const uniqueCategories = useMemo(() => {
-    const categories = new Set(projects.map((project) => project.category))
-    return ["all", ...Array.from(categories).sort()]
-  }, [projects])
-
-  const uniqueClients = useMemo(() => {
-    return [{ id: "all", name: "All Clients" }, ...clients.map((c) => ({ id: c.id, name: c.name }))]
-  }, [clients])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -145,20 +129,17 @@ export default function PortfolioPage() {
     })
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p>Loading projects...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen text-red-500">
-        <p>{error}</p>
-      </div>
-    )
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case "published":
+        return "bg-green-600 text-white"
+      case "draft":
+        return "bg-yellow-500 text-white"
+      case "archived":
+        return "bg-gray-500 text-white"
+      default:
+        return ""
+    }
   }
 
   return (
@@ -184,7 +165,7 @@ export default function PortfolioPage() {
             {currentUser && (
               <Button
                 variant="outline"
-                className="border-primary text-primary hover:bg-primary/10 bg-transparent"
+                className="border-primary text-primary hover:bg-primary/10"
                 onClick={() => logout()}
               >
                 Logout
@@ -200,14 +181,12 @@ export default function PortfolioPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-title font-heading text-high-contrast mb-2">Portfolio Management</h1>
-                <p className="text-body text-medium-contrast">
-                  Manage your project portfolio, including details, images, and team members.
-                </p>
+                <p className="text-body text-medium-contrast">Manage coaching portfolio projects and case studies</p>
               </div>
               <Link href="/admin/portfolio/add">
                 <Button className="bg-primary hover:bg-agile-teal-dark text-primary-foreground">
                   <PlusIcon className="h-4 w-4 mr-2" />
-                  Add Portfolio Item
+                  Add Portfolio
                 </Button>
               </Link>
             </div>
@@ -219,8 +198,8 @@ export default function PortfolioPage() {
             <CardHeader>
               <div className="flex flex-col md:flex-row gap-4 justify-between">
                 <CardTitle className="flex items-center gap-2">
-                  <FolderOpenIcon className="h-5 w-5 text-primary" />
-                  Portfolio ({filteredProjects.length})
+                  <FolderIcon className="h-5 w-5 text-primary" />
+                  Portfolio Projects ({filteredProjects.length})
                 </CardTitle>
 
                 {/* Search and Filter Controls */}
@@ -236,31 +215,33 @@ export default function PortfolioPage() {
                   </div>
 
                   <div className="flex gap-2">
-                    <Select value={categoryFilter} onValueChange={(value: any) => setCategoryFilter(value)}>
+                    <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
                       <SelectTrigger className="w-[130px]">
                         <div className="flex items-center gap-2">
                           <FilterIcon className="h-4 w-4" />
-                          <span>Category</span>
+                          <span>Status</span>
                         </div>
                       </SelectTrigger>
                       <SelectContent>
-                        {uniqueCategories.map((category) => (
-                          <SelectItem key={category} value={category}>
-                            {category === "all" ? "All Categories" : category}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="published">Published</SelectItem>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="archived">Archived</SelectItem>
                       </SelectContent>
                     </Select>
 
-                    <Select value={clientFilter} onValueChange={(value: any) => setClientFilter(value)}>
-                      <SelectTrigger className="w-[130px]">
+                    <Select value={clientFilter} onValueChange={(value) => setClientFilter(value)}>
+                      <SelectTrigger className="w-[150px]">
                         <div className="flex items-center gap-2">
                           <FilterIcon className="h-4 w-4" />
-                          <span>Client</span>
+                          <span>Client</span> {/* Changed label to Client */}
                         </div>
                       </SelectTrigger>
-                      <SelectContent>
-                        {uniqueClients.map((client) => (
+                      <SelectContent className="max-h-60 overflow-y-auto">
+                        {" "}
+                        {/* Added classes here */}
+                        <SelectItem value="all">All Clients</SelectItem> {/* Changed label to All Clients */}
+                        {clients.map((client) => (
                           <SelectItem key={client.id} value={client.id}>
                             {client.name}
                           </SelectItem>
@@ -279,7 +260,7 @@ export default function PortfolioPage() {
                       <TableHead>Title</TableHead>
                       <TableHead>Client</TableHead>
                       <TableHead>Category</TableHead>
-                      <TableHead>Duration</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead>Last Updated</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -291,19 +272,30 @@ export default function PortfolioPage() {
                           <TableCell className="font-medium">{project.title}</TableCell>
                           <TableCell>{project.clientName}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{project.category}</Badge>
+                            <Badge variant="outline" className="border-primary/50 text-primary hover:bg-primary/10">
+                              {project.category}
+                            </Badge>
                           </TableCell>
-                          <TableCell>{project.duration}</TableCell>
+                          <TableCell>
+                            <Badge variant="default" className={getStatusBadgeVariant(project.status)}>
+                              {project.status}
+                            </Badge>
+                          </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
-                            {project.updated_at ? formatDate(project.updated_at) : "N/A"}
+                            {formatDate(project.lastUpdated)}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex gap-2 justify-end">
-                              <Link href={`/admin/portfolio/edit/${project.id}`}>
-                                <Button size="sm" variant="outline">
+                              <Button size="sm" variant="outline" asChild>
+                                <Link href={`/project/${project.id}`}>
+                                  <EyeIcon className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                              <Button size="sm" variant="outline" asChild>
+                                <Link href={`/admin/portfolio/edit/${project.id}`}>
                                   <EditIcon className="h-4 w-4" />
-                                </Button>
-                              </Link>
+                                </Link>
+                              </Button>
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
                                   <Button size="sm" variant="destructive">
@@ -314,14 +306,14 @@ export default function PortfolioPage() {
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      This action cannot be undone. This will permanently delete the project{" "}
-                                      <span className="font-semibold">{project.title}</span> and all associated data and
-                                      images from our servers.
+                                      This action cannot be undone. This will permanently delete the portfolio project{" "}
+                                      <span className="font-semibold">{project.title}</span> and remove it from our
+                                      servers.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteProject(project.id)}>
+                                    <AlertDialogAction onClick={() => handleDelete(project.id)}>
                                       Continue
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
@@ -334,7 +326,7 @@ export default function PortfolioPage() {
                     ) : (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
-                          No portfolio items found matching your filters
+                          No portfolio projects found matching your filters
                         </TableCell>
                       </TableRow>
                     )}
