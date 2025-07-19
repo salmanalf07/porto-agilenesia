@@ -1,150 +1,168 @@
 "use client"
 
-import type React from "react"
+import { Badge } from "@/components/ui/badge"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import type React from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { PlusIcon, SaveIcon, XIcon, ArrowLeftIcon } from "lucide-react"
 import { ThemeToggleButton } from "@/components/theme-toggle-button"
 import { AgilenesiaLogo } from "@/components/agilenesia-logo"
 import { FadeInUp } from "@/components/page-transition"
-import { clients } from "@/lib/data"
 import { getUserSession, logout } from "@/app/actions"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { PlusIcon, XIcon, ArrowLeftIcon, SaveIcon } from "lucide-react"
-import type { User } from "@/lib/data"
+import { ThumbnailGallery } from "@/components/thumbnail-gallery"
+import { ProjectGalleryInput } from "@/components/project-gallery-input"
 import { RichTextEditor } from "@/components/rich-text-editor"
-import { ProjectGalleryInput, type ProjectImageInput } from "@/components/project-gallery-input"
+import { createProject } from "@/lib/portfolio-crud" // Import createProject
+import { getClients } from "@/lib/clients" // Import getClients
+import type { Client } from "@/lib/data"
 
-interface TeamMember {
+interface TeamMemberFormState {
   name: string
   role: string
-  avatarUrl: string
+  avatarFile: File | null
+  avatarUrl: string | null // Current URL, either existing or new preview
 }
 
 export default function AddPortfolioPage() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const router = useRouter()
-
+  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [clients, setClients] = useState<Client[]>([])
   const [formData, setFormData] = useState({
     title: "",
     clientId: "",
     category: "",
     duration: "",
-    description: "", // This will now store HTML content
-    status: "draft" as "published" | "draft" | "archived",
-    products: [""] as string[],
+    products: [] as string[],
+    description: "",
+    coachingThumbnailFile: null as File | null,
+    coachingThumbnailPreviewUrl: null as string | null,
+    galleryFiles: [] as File[],
   })
-
-  const [coachingSquadMembers, setCoachingSquadMembers] = useState<TeamMember[]>([
-    { name: "", role: "", avatarUrl: "" },
+  const [clientTeam, setClientTeam] = useState<TeamMemberFormState[]>([
+    { name: "", role: "", avatarFile: null, avatarUrl: null },
   ])
-  const [agilenesiaSquadMembers, setAgilenesiaSquadMembers] = useState<TeamMember[]>([
-    { name: "", role: "", avatarUrl: "" },
+  const [agilenesiaTeam, setAgilenesiaTeam] = useState<TeamMemberFormState[]>([
+    { name: "", role: "", avatarFile: null, avatarUrl: null },
   ])
-
-  // Change from single coaching image to gallery images
-  const [galleryImages, setGalleryImages] = useState<ProjectImageInput[]>([{ url: "", alt: "" }])
+  const [newProduct, setNewProduct] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     const fetchUser = async () => {
       const session = await getUserSession()
       setCurrentUser(session)
-
-      // Redirect if not admin
-      if (session?.role !== "admin") {
-        router.push("/")
-      }
     }
     fetchUser()
-  }, [router])
+  }, [])
+
+  const fetchClients = useCallback(async () => {
+    const fetchedClients = await getClients()
+    if (fetchedClients) {
+      setClients(fetchedClients)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchClients()
+  }, [fetchClients])
 
   const handleAddProduct = () => {
-    setFormData({
-      ...formData,
-      products: [...formData.products, ""],
-    })
-  }
-
-  const handleRemoveProduct = (index: number) => {
-    const updatedProducts = [...formData.products]
-    updatedProducts.splice(index, 1)
-    setFormData({
-      ...formData,
-      products: updatedProducts,
-    })
-  }
-
-  const handleProductChange = (index: number, value: string) => {
-    const updatedProducts = [...formData.products]
-    updatedProducts[index] = value
-    setFormData({
-      ...formData,
-      products: updatedProducts,
-    })
-  }
-
-  const handleAddTeamMember = (squadType: "coaching" | "agilenesia") => {
-    if (squadType === "coaching") {
-      setCoachingSquadMembers([...coachingSquadMembers, { name: "", role: "", avatarUrl: "" }])
-    } else {
-      setAgilenesiaSquadMembers([...agilenesiaSquadMembers, { name: "", role: "", avatarUrl: "" }])
+    if (newProduct.trim() !== "" && !formData.products.includes(newProduct.trim())) {
+      setFormData((prev) => ({
+        ...prev,
+        products: [...prev.products, newProduct.trim()],
+      }))
+      setNewProduct("")
     }
   }
 
-  const handleRemoveTeamMember = (squadType: "coaching" | "agilenesia", index: number) => {
-    if (squadType === "coaching") {
-      const updatedMembers = [...coachingSquadMembers]
-      updatedMembers.splice(index, 1)
-      setCoachingSquadMembers(updatedMembers)
+  const handleRemoveProduct = (productToRemove: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      products: prev.products.filter((product) => product !== productToRemove),
+    }))
+  }
+
+  const handleAddTeamMember = (teamType: "client" | "agilenesia") => {
+    if (teamType === "client") {
+      setClientTeam((prev) => [...prev, { name: "", role: "", avatarFile: null, avatarUrl: null }])
     } else {
-      const updatedMembers = [...agilenesiaSquadMembers]
-      updatedMembers.splice(index, 1)
-      setAgilenesiaSquadMembers(updatedMembers)
+      setAgilenesiaTeam((prev) => [...prev, { name: "", role: "", avatarFile: null, avatarUrl: null }])
+    }
+  }
+
+  const handleRemoveTeamMember = (teamType: "client" | "agilenesia", index: number) => {
+    if (teamType === "client") {
+      setClientTeam((prev) => prev.filter((_, i) => i !== index))
+    } else {
+      setAgilenesiaTeam((prev) => prev.filter((_, i) => i !== index))
     }
   }
 
   const handleTeamMemberChange = (
-    squadType: "coaching" | "agilenesia",
+    teamType: "client" | "agilenesia",
     index: number,
-    field: keyof TeamMember,
-    value: string,
+    field: keyof TeamMemberFormState,
+    value: any,
   ) => {
-    if (squadType === "coaching") {
-      const updatedMembers = [...coachingSquadMembers]
-      updatedMembers[index] = { ...updatedMembers[index], [field]: value }
-      setCoachingSquadMembers(updatedMembers)
+    if (teamType === "client") {
+      setClientTeam((prev) => prev.map((member, i) => (i === index ? { ...member, [field]: value } : member)))
     } else {
-      const updatedMembers = [...agilenesiaSquadMembers]
-      updatedMembers[index] = { ...updatedMembers[index], [field]: value }
-      setAgilenesiaSquadMembers(updatedMembers)
+      setAgilenesiaTeam((prev) => prev.map((member, i) => (i === index ? { ...member, [field]: value } : member)))
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsSubmitting(true)
 
-    // In a real app, you would send this data to your backend
-    const newProject = {
-      ...formData,
-      id: `project_${Date.now()}`,
-      clientName: clients.find((c) => c.id === formData.clientId)?.name || "",
-      clientLogoUrl: clients.find((c) => c.id === formData.clientId)?.logoUrl || "",
-      coachingImageUrl: galleryImages[0]?.url || "", // Use the first image as main coaching image for compatibility
-      galleryImages: galleryImages.filter((img) => img.url.trim() !== ""), // Filter out empty image entries
-      squad: coachingSquadMembers.filter((member) => member.name.trim() !== ""),
-      agilenesiaSquad: agilenesiaSquadMembers.filter((member) => member.name.trim() !== ""), // Add Agilenesia Squad
-      lastUpdated: new Date().toISOString(),
+    const selectedClient = clients.find((c) => c.id === formData.clientId)
+    const clientName = selectedClient?.name || "Unknown Client"
+    const clientLogoUrl = selectedClient?.logoUrl || "/placeholder.svg"
+
+    const projectData = {
+      title: formData.title,
+      clientId: formData.clientId,
+      clientName: clientName,
+      clientLogoUrl: clientLogoUrl,
+      category: formData.category,
+      duration: formData.duration,
+      products: formData.products,
+      description: formData.description,
+      coachingThumbnailFile: formData.coachingThumbnailFile,
+      galleryFiles: formData.galleryFiles,
+      clientSquadFiles: clientTeam.map((member) => ({ member, file: member.avatarFile })),
+      agilenesiaSquadFiles: agilenesiaTeam.map((member) => ({ member, file: member.avatarFile })),
     }
 
-    console.log("New project data:", newProject)
+    const newProject = await createProject(projectData)
 
-    // Navigate back to portfolio list
-    router.push("/admin/portfolio")
+    if (newProject) {
+      alert("Portfolio item added successfully!")
+      // Clear form
+      setFormData({
+        title: "",
+        clientId: "",
+        category: "",
+        duration: "",
+        products: [],
+        description: "",
+        coachingThumbnailFile: null,
+        coachingThumbnailPreviewUrl: null,
+        galleryFiles: [],
+      })
+      setClientTeam([{ name: "", role: "", avatarFile: null, avatarUrl: null }])
+      setAgilenesiaTeam([{ name: "", role: "", avatarFile: null, avatarUrl: null }])
+      setNewProduct("")
+    } else {
+      alert("Failed to add portfolio item. Please check console for details.")
+    }
+    setIsSubmitting(false)
   }
 
   return (
@@ -170,7 +188,7 @@ export default function AddPortfolioPage() {
             {currentUser && (
               <Button
                 variant="outline"
-                className="border-primary text-primary hover:bg-primary/10"
+                className="border-primary text-primary hover:bg-primary/10 bg-transparent"
                 onClick={() => logout()}
               >
                 Logout
@@ -189,314 +207,269 @@ export default function AddPortfolioPage() {
                 Back to Portfolio
               </Link>
             </Button>
-            <div>
-              <h1 className="text-title font-heading text-high-contrast mb-2">Add New Portfolio Project</h1>
-              <p className="text-body text-medium-contrast">Create a new coaching portfolio project or case study</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-title font-heading text-high-contrast mb-2">Add New Portfolio Item</h1>
+                <p className="text-body text-medium-contrast">
+                  Fill in the details to add a new project to your portfolio.
+                </p>
+              </div>
+              <Button
+                type="submit"
+                form="portfolio-form"
+                className="bg-primary hover:bg-agile-teal-dark text-primary-foreground"
+                disabled={isSubmitting}
+              >
+                <SaveIcon className="h-4 w-4 mr-2" />
+                {isSubmitting ? "Saving..." : "Save Portfolio"}
+              </Button>
             </div>
           </div>
         </FadeInUp>
 
         <FadeInUp delay={0.2}>
-          <form onSubmit={handleSubmit}>
-            <div className="grid gap-8 lg:grid-cols-3">
-              {/* Main Content */}
-              <div className="lg:col-span-2 space-y-8">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Project Information</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="title">Project Title</Label>
-                        <Input
-                          id="title"
-                          value={formData.title}
-                          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                          required
-                          placeholder="e.g. Agile Coaching for Digital Transformation"
-                        />
-                      </div>
-
-                      <div>
-                        <Label htmlFor="client">Client</Label>
-                        <Select
-                          value={formData.clientId}
-                          onValueChange={(value) => setFormData({ ...formData, clientId: value })}
-                          required
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a client" />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-60 overflow-y-auto">
-                            {" "}
-                            {/* Added classes here */}
-                            {clients.map((client) => (
-                              <SelectItem key={client.id} value={client.id}>
-                                {client.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="category">Category</Label>
-                          <Input
-                            id="category"
-                            value={formData.category}
-                            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                            required
-                            placeholder="e.g. Enterprise Agile Coaching"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="duration">Duration</Label>
-                          <Input
-                            id="duration"
-                            value={formData.duration}
-                            onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                            required
-                            placeholder="e.g. 6 Months (Jan 2024 - Jun 2024)"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label htmlFor="description">Project Overview</Label>
-                        <RichTextEditor
-                          value={formData.description}
-                          onChange={(content) => setFormData({ ...formData, description: content })}
-                          placeholder="Provide a detailed description of the coaching project..."
-                          className="min-h-[200px]"
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Project Gallery</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ProjectGalleryInput value={galleryImages} onChange={setGalleryImages} />
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Add images for the project gallery. The first image will be used as the main project image.
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Products & Services</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {formData.products.map((product, index) => (
-                      <div key={index} className="flex gap-2">
-                        <Input
-                          value={product}
-                          onChange={(e) => handleProductChange(index, e.target.value)}
-                          placeholder="e.g. Agile Coaching"
-                          className="flex-1"
-                        />
-                        {formData.products.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => handleRemoveProduct(index)}
-                          >
-                            <XIcon className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAddProduct}
-                      className="flex items-center"
-                    >
-                      <PlusIcon className="h-4 w-4 mr-2" />
-                      Add Product/Service
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Agilenesia Coach</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {coachingSquadMembers.map((member, index) => (
-                      <div key={index} className="space-y-4 pb-4 border-b last:border-0">
-                        <div className="flex justify-between items-center">
-                          <h4 className="font-medium">Team Coach {index + 1}</h4>
-                          {coachingSquadMembers.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRemoveTeamMember("coaching", index)}
-                            >
-                              <XIcon className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <Label htmlFor={`coaching-member-name-${index}`}>Name</Label>
-                            <Input
-                              id={`coaching-member-name-${index}`}
-                              value={member.name}
-                              onChange={(e) => handleTeamMemberChange("coaching", index, "name", e.target.value)}
-                              placeholder="Full Name"
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor={`coaching-member-role-${index}`}>Role</Label>
-                            <Input
-                              id={`coaching-member-role-${index}`}
-                              value={member.role}
-                              onChange={(e) => handleTeamMemberChange("coaching", index, "role", e.target.value)}
-                              placeholder="e.g. Lead Agile Coach"
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor={`coaching-member-avatar-${index}`}>Avatar URL (optional)</Label>
-                            <Input
-                              id={`coaching-member-avatar-${index}`}
-                              value={member.avatarUrl}
-                              onChange={(e) => handleTeamMemberChange("coaching", index, "avatarUrl", e.target.value)}
-                              placeholder="https://example.com/avatar.jpg"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleAddTeamMember("coaching")}
-                      className="flex items-center"
-                    >
-                      <PlusIcon className="h-4 w-4 mr-2" />
-                      Add Team Member
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Agilenesia Squad</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {agilenesiaSquadMembers.map((member, index) => (
-                      <div key={index} className="space-y-4 pb-4 border-b last:border-0">
-                        <div className="flex justify-between items-center">
-                          <h4 className="font-medium">Team Member {index + 1}</h4>
-                          {agilenesiaSquadMembers.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRemoveTeamMember("agilenesia", index)}
-                            >
-                              <XIcon className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <Label htmlFor={`agilenesia-member-name-${index}`}>Name</Label>
-                            <Input
-                              id={`agilenesia-member-name-${index}`}
-                              value={member.name}
-                              onChange={(e) => handleTeamMemberChange("agilenesia", index, "name", e.target.value)}
-                              placeholder="Full Name"
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor={`agilenesia-member-role-${index}`}>Role</Label>
-                            <Input
-                              id={`agilenesia-member-role-${index}`}
-                              value={member.role}
-                              onChange={(e) => handleTeamMemberChange("agilenesia", index, "role", e.target.value)}
-                              placeholder="e.g. Founder & CEO"
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor={`agilenesia-member-avatar-${index}`}>Avatar URL (optional)</Label>
-                            <Input
-                              id={`agilenesia-member-avatar-${index}`}
-                              value={member.avatarUrl}
-                              onChange={(e) => handleTeamMemberChange("agilenesia", index, "avatarUrl", e.target.value)}
-                              placeholder="https://example.com/avatar.jpg"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleAddTeamMember("agilenesia")}
-                      className="flex items-center"
-                    >
-                      <PlusIcon className="h-4 w-4 mr-2" />
-                      Add Team Member
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Sidebar */}
-              <div className="lg:col-span-1 space-y-8">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Publishing</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <Label htmlFor="status">Status</Label>
-                      <Select
-                        value={formData.status}
-                        onValueChange={(value: "published" | "draft" | "archived") =>
-                          setFormData({ ...formData, status: value })
+          <form id="portfolio-form" onSubmit={handleSubmit} className="space-y-8">
+            <Card>
+              <CardHeader>
+                <CardTitle>Project Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="title">Project Title</Label>
+                  <Input
+                    id="title"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="client">Client</Label>
+                  <Select
+                    value={formData.clientId}
+                    onValueChange={(value) => setFormData({ ...formData, clientId: value })}
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a client" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60 overflow-y-auto">
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="category">Category</Label>
+                  <Input
+                    id="category"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="duration">Duration</Label>
+                  <Input
+                    id="duration"
+                    value={formData.duration}
+                    onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                    placeholder="e.g., 6 Months (Jan 2024 - Jun 2024)"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="products">Products/Services Involved</Label>
+                  <div className="flex space-x-2 mb-2">
+                    <Input
+                      id="new-product"
+                      value={newProduct}
+                      onChange={(e) => setNewProduct(e.target.value)}
+                      placeholder="Add a product or service"
+                      onKeyPress={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          handleAddProduct()
                         }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="published">Published</SelectItem>
-                          <SelectItem value="draft">Draft</SelectItem>
-                          <SelectItem value="archived">Archived</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Only published projects will be visible to clients.
-                      </p>
-                    </div>
+                      }}
+                    />
+                    <Button type="button" onClick={handleAddProduct}>
+                      <PlusIcon className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {formData.products.map((product, index) => (
+                      <Badge key={index} className="flex items-center gap-1">
+                        {product}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4 p-0"
+                          onClick={() => handleRemoveProduct(product)}
+                        >
+                          <XIcon className="h-3 w-3" />
+                        </Button>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="description">Project Description</Label>
+                  <RichTextEditor
+                    value={formData.description}
+                    onChange={(html) => setFormData({ ...formData, description: html })}
+                    placeholder="Write a detailed description of the project..."
+                  />
+                </div>
+              </CardContent>
+            </Card>
 
-                    <div className="pt-4 flex flex-col gap-2">
-                      <Button type="submit" className="w-full bg-primary hover:bg-agile-teal-dark">
-                        <SaveIcon className="h-4 w-4 mr-2" />
-                        Save Project
-                      </Button>
-                      <Button type="button" variant="outline" className="w-full" asChild>
-                        <Link href="/admin/portfolio">Cancel</Link>
+            <Card>
+              <CardHeader>
+                <CardTitle>Images</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="coaching-thumbnail">Coaching Thumbnail Image</Label>
+                  <ThumbnailGallery
+                    value={formData.coachingThumbnailPreviewUrl}
+                    onChange={(file, previewUrl) =>
+                      setFormData({ ...formData, coachingThumbnailFile: file, coachingThumbnailPreviewUrl: previewUrl })
+                    }
+                    emptyStateAspectRatioClass="aspect-video"
+                  />
+                  <p className="text-sm text-muted-foreground mt-1">
+                    This will be the main image displayed for the project.
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="gallery">Project Gallery Images</Label>
+                  <ProjectGalleryInput
+                    value={formData.galleryFiles}
+                    onChange={(files) => setFormData({ ...formData, galleryFiles: files })}
+                    existingImages={[]} // No existing images for add page
+                  />
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Add multiple images to showcase the project in detail.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Team Members</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Client Squad</h3>
+                  {clientTeam.map((member, index) => (
+                    <div key={index} className="flex items-end gap-2 mb-4 border p-3 rounded-md">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-grow">
+                        <div>
+                          <Label htmlFor={`client-name-${index}`}>Name</Label>
+                          <Input
+                            id={`client-name-${index}`}
+                            value={member.name}
+                            onChange={(e) => handleTeamMemberChange("client", index, "name", e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor={`client-role-${index}`}>Role</Label>
+                          <Input
+                            id={`client-role-${index}`}
+                            value={member.role}
+                            onChange={(e) => handleTeamMemberChange("client", index, "role", e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Label htmlFor={`client-avatar-${index}`}>Avatar</Label>
+                          <ThumbnailGallery
+                            value={member.avatarUrl}
+                            onChange={(file, previewUrl) => {
+                              handleTeamMemberChange("client", index, "avatarFile", file)
+                              handleTeamMemberChange("client", index, "avatarUrl", previewUrl)
+                            }}
+                            emptyStateAspectRatioClass="aspect-square"
+                          />
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => handleRemoveTeamMember("client", index)}
+                        className="shrink-0"
+                      >
+                        <XIcon className="h-4 w-4" />
                       </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
+                  ))}
+                  <Button type="button" variant="outline" onClick={() => handleAddTeamMember("client")}>
+                    <PlusIcon className="h-4 w-4 mr-2" />
+                    Add Client Team Member
+                  </Button>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Agilenesia Squad</h3>
+                  {agilenesiaTeam.map((member, index) => (
+                    <div key={index} className="flex items-end gap-2 mb-4 border p-3 rounded-md">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-grow">
+                        <div>
+                          <Label htmlFor={`agilenesia-name-${index}`}>Name</Label>
+                          <Input
+                            id={`agilenesia-name-${index}`}
+                            value={member.name}
+                            onChange={(e) => handleTeamMemberChange("agilenesia", index, "name", e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor={`agilenesia-role-${index}`}>Role</Label>
+                          <Input
+                            id={`agilenesia-role-${index}`}
+                            value={member.role}
+                            onChange={(e) => handleTeamMemberChange("agilenesia", index, "role", e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Label htmlFor={`agilenesia-avatar-${index}`}>Avatar</Label>
+                          <ThumbnailGallery
+                            value={member.avatarUrl}
+                            onChange={(file, previewUrl) => {
+                              handleTeamMemberChange("agilenesia", index, "avatarFile", file)
+                              handleTeamMemberChange("agilenesia", index, "avatarUrl", previewUrl)
+                            }}
+                            emptyStateAspectRatioClass="aspect-square"
+                          />
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => handleRemoveTeamMember("agilenesia", index)}
+                        className="shrink-0"
+                      >
+                        <XIcon className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" onClick={() => handleAddTeamMember("agilenesia")}>
+                    <PlusIcon className="h-4 w-4 mr-2" />
+                    Add Agilenesia Team Member
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </form>
         </FadeInUp>
       </main>
