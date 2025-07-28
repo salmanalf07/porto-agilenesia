@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useRouter } from "next/navigation"
 import type { User } from "@/lib/data"
+import { supabase } from "@/lib/supabaseClient"
 
 // Extended Project type with status and lastUpdated
 interface PortfolioProject extends Project {
@@ -45,14 +46,8 @@ interface PortfolioProject extends Project {
 }
 
 export default function PortfolioPage() {
-  // Convert initial projects to include status and lastUpdated
-  const initialPortfolioProjects: PortfolioProject[] = initialProjects.map((project) => ({
-    ...project,
-    status: "published", // Default status
-    lastUpdated: new Date().toISOString(), // Default lastUpdated
-  }))
-
-  const [projects, setProjects] = useState<PortfolioProject[]>(initialPortfolioProjects)
+  const [projects, setProjects] = useState<PortfolioProject[]>([])
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const router = useRouter()
 
@@ -76,6 +71,35 @@ export default function PortfolioPage() {
       }
     }
     fetchUser()
+      const fetchProjects = async () => {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*, clients(name)")
+
+      if (error) {
+        console.error("Error fetching projects:", error)
+      } else if (data) {
+        const transformed = data.map((project) => ({
+          ...project,
+          clientName: project.clients?.name || "",
+          status: project.status || "published",
+          lastUpdated: project.lastUpdated || new Date().toISOString(),
+        }))
+        setProjects(transformed)
+      }
+    }
+
+    fetchProjects()
+
+    const fetchClients = async () => {
+        const { data, error } = await supabase.from("clients").select("id, name")
+        if (error) {
+          console.error("Failed to fetch clients:", error.message)
+        } else {
+          setClients(data ?? [])
+        }
+      }
+    fetchClients()
   }, [router])
 
   // Get unique clients for filter

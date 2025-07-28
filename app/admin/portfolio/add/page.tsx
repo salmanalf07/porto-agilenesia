@@ -19,6 +19,7 @@ import { PlusIcon, XIcon, ArrowLeftIcon, SaveIcon } from "lucide-react"
 import { RichTextEditor } from "@/components/rich-text-editor"
 import { ProjectGalleryInput, type ProjectImageInput } from "@/components/project-gallery-input"
 import { supabase } from "@/lib/supabaseClient"
+import { createProject } from "@/lib/portfolio-crud"
 
 interface TeamMember {
   name: string
@@ -32,26 +33,30 @@ export default function AddPortfolioPage() {
   const router = useRouter()
 
   const [formData, setFormData] = useState({
-    title: "",
-    clientId: "",
-    category: "",
-    duration: "",
-    description: "", // This will now store HTML content
-    status: "draft" as "published" | "draft" | "archived",
-    products: [""] as string[],
-  })
+  title: "",
+  clientId: "",
+  category: "",
+  duration: "", 
+  description: "",
+  status: "draft" as "published" | "draft" | "archived",
+  products: [""] as string[],
+  coachingImageUrl: "",
+  galleryImages: [] as { url: string }[],
+  squad: [] as { name: string; role?: string }[],
+  agilenesiaSquad: [] as { name: string; role?: string }[],
+})
 
   const [coachingSquadMembers, setCoachingSquadMembers] = useState<TeamMember[]>([
     { name: "", role: "", avatarUrl: "" },
   ])
-  const [agilenesiaSquadMembers, setAgilenesiaSquadMembers] = useState<TeamMember[]>([
+  const [agilenesiaSquadMembers, setagilenesiaSquadMembers] = useState<TeamMember[]>([
     { name: "", role: "", avatarUrl: "" },
   ])
 
   // Change from single coaching image to gallery images
   const [galleryImages, setGalleryImages] = useState<ProjectImageInput[]>([{ url: "", alt: "" }])
 
-  useEffect(() => {
+ useEffect(() => {
     const fetchUser = async () => {
       const session = await getUserSession()
       setCurrentUser(session)
@@ -104,7 +109,7 @@ export default function AddPortfolioPage() {
     if (squadType === "coaching") {
       setCoachingSquadMembers([...coachingSquadMembers, { name: "", role: "", avatarUrl: "" }])
     } else {
-      setAgilenesiaSquadMembers([...agilenesiaSquadMembers, { name: "", role: "", avatarUrl: "" }])
+      setagilenesiaSquadMembers([...agilenesiaSquadMembers, { name: "", role: "", avatarUrl: "" }])
     }
   }
 
@@ -116,7 +121,7 @@ export default function AddPortfolioPage() {
     } else {
       const updatedMembers = [...agilenesiaSquadMembers]
       updatedMembers.splice(index, 1)
-      setAgilenesiaSquadMembers(updatedMembers)
+      setagilenesiaSquadMembers(updatedMembers)
     }
   }
 
@@ -133,31 +138,30 @@ export default function AddPortfolioPage() {
     } else {
       const updatedMembers = [...agilenesiaSquadMembers]
       updatedMembers[index] = { ...updatedMembers[index], [field]: value }
-      setAgilenesiaSquadMembers(updatedMembers)
+      setagilenesiaSquadMembers(updatedMembers)
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    // In a real app, you would send this data to your backend
-    const newProject = {
-      ...formData,
-      id: `project_${Date.now()}`,
-      clientName: clients.find((c) => c.id === formData.clientId)?.name || "",
-      clientLogoUrl: clients.find((c) => c.id === formData.clientId)?.logoUrl || "",
-      coachingImageUrl: galleryImages[0]?.url || "", // Use the first image as main coaching image for compatibility
-      galleryImages: galleryImages.filter((img) => img.url.trim() !== ""), // Filter out empty image entries
-      squad: coachingSquadMembers.filter((member) => member.name.trim() !== ""),
-      agilenesiaSquad: agilenesiaSquadMembers.filter((member) => member.name.trim() !== ""), // Add Agilenesia Squad
-      lastUpdated: new Date().toISOString(),
-    }
-
-    console.log("New project data:", newProject)
-
-    // Navigate back to portfolio list
-    router.push("/admin/portfolio")
+  const newProject = {
+    ...formData,
+    coachingImageUrl: galleryImages[0]?.url || "",
+    galleryImages: galleryImages.filter((img) => img.url.trim() !== ""),
+    squad: coachingSquadMembers.filter((member) => member.name.trim() !== ""),
+    agilenesiaSquad: agilenesiaSquadMembers.filter((member) => member.name.trim() !== ""),
+    lastUpdated: new Date().toISOString(),
   }
+
+  try {
+    const savedProject = await createProject(newProject);
+    console.log("✅ Project created:", savedProject);
+    router.push("/admin/portfolio");
+  } catch (err) {
+    console.error("❌ Error saving project:", err);
+  }
+};
 
   return (
     <div className="bg-background text-foreground min-h-screen">
@@ -241,13 +245,12 @@ export default function AddPortfolioPage() {
                             <SelectValue placeholder="Select a client" />
                           </SelectTrigger>
                           <SelectContent className="max-h-60 overflow-y-auto">
-                            {" "}
-                            {/* Added classes here */}
-                            {clients.map((client) => (
-                              <SelectItem key={client.id} value={client.id}>
-                                {client.name}
-                              </SelectItem>
-                            ))}
+                              <SelectItem value="none">None</SelectItem>
+                                {clients.map((client) => (
+                                  <SelectItem key={client.id} value={String(client.id)}>
+                                    {client.name}
+                                  </SelectItem>
+                                ))}
                           </SelectContent>
                         </Select>
                       </div>
