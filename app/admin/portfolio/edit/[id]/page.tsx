@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ThemeToggleButton } from "@/components/theme-toggle-button"
 import { AgilenesiaLogo } from "@/components/agilenesia-logo"
 import { FadeInUp } from "@/components/page-transition"
-import { clients, getProjectById } from "@/lib/data"
+import { clients } from "@/lib/data"
 import { getUserSession, logout } from "@/app/actions"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -19,6 +19,8 @@ import { PlusIcon, XIcon, ArrowLeftIcon, SaveIcon, EyeIcon } from "lucide-react"
 import type { User } from "@/lib/data"
 import { RichTextEditor } from "@/components/rich-text-editor"
 import { ProjectGalleryInput, type ProjectImageInput } from "@/components/project-gallery-input"
+import { getProjectById, updateProject  } from "@/lib/portfolio-crud"
+import { supabase } from "@/lib/supabaseClient"
 
 interface TeamMember {
   name: string
@@ -46,6 +48,7 @@ interface PortfolioProject {
 
 export default function EditPortfolioPage({ params }: { params: { id: string } }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [project, setProject] = useState<PortfolioProject | null>(null)
   const router = useRouter()
@@ -71,90 +74,87 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
   const [galleryImages, setGalleryImages] = useState<ProjectImageInput[]>([{ url: "", alt: "" }])
 
   useEffect(() => {
-    const fetchUser = async () => {
-      const session = await getUserSession()
-      setCurrentUser(session)
+  const fetchData = async () => {
+    const session = await getUserSession()
+    setCurrentUser(session)
 
-      // Redirect if not admin
-      if (session?.role !== "admin") {
-        router.push("/")
-      }
+    if (session?.role !== "admin") {
+      router.push("/")
+      return
     }
-    fetchUser()
 
-    // Fetch project data
-    const projectData = getProjectById(params.id)
+    const projectData = await getProjectById(params.id)
+
+    if (!projectData) {
+      router.push("/admin/portfolio")
+      return
+    }
+
     if (projectData) {
-      // Find client ID from client name
-      const clientId = clients.find((c) => c.name === projectData.clientName)?.id || ""
+      let parsedProducts: string[] = []
 
-      // Set project data with status (assuming it's published by default)
+      try {
+        parsedProducts = JSON.parse(projectData.products || "[]")
+      } catch (e) {
+        console.error("Failed to parse products:", e)
+        parsedProducts = [""]
+      }
+
+      const clientId = projectData.clients?.id || ""
+
       const portfolioProject: PortfolioProject = {
         ...projectData,
         clientId,
-        status: "published",
+        status: projectData.status ?? "published",
         lastUpdated: new Date().toISOString(),
       }
 
       setProject(portfolioProject)
 
-      // Set form data
       setFormData({
         title: portfolioProject.title,
         clientId: clientId,
         category: portfolioProject.category,
         duration: portfolioProject.duration,
-        // ALWAYS use this example description for demonstration purposes
-        description: `
-      <h1>Contoh Deskripsi Proyek</h1>
-      <p>Ini adalah <strong>deskripsi proyek</strong> yang diedit menggunakan <em>Rich Text Editor</em>. Anda bisa <u>memformat teks</u> dengan mudah.</p>
-      <h2>Fitur Pemformatan:</h2>
-      <ul>
-        <li>Teks <b>Tebal</b></li>
-        <li>Teks <i>Miring</i></li>
-        <li>Teks <u>Garis Bawah</u></li>
-        <li>Daftar Berpoin</li>
-        <li>Daftar Bernomor</li>
-      </ul>
-      <h3>Daftar Bernomor:</h3>
-      <ol>
-        <li>Item pertama</li>
-        <li>Item kedua</li>
-        <li>Item ketiga</li>
-      </ol>
-      <p style="text-align: center;">Teks ini diatur rata tengah.</p>
-      <p style="text-align: right;">Teks ini diatur rata kanan.</p>
-      <p>Kunjungi <a href="https://www.agilenesia.com" target="_blank">Website Agilenesia</a> untuk informasi lebih lanjut.</p>
-    `,
+        description: portfolioProject.description || "",
         status: portfolioProject.status,
-        products: portfolioProject.products.length > 0 ? portfolioProject.products : [""],
+        products: parsedProducts.length > 0 ? parsedProducts : [""],
       })
 
-      // Set gallery images from project data, or default to one empty entry
       setGalleryImages(
-        portfolioProject.galleryImages && portfolioProject.galleryImages.length > 0
+        portfolioProject.galleryImages?.length > 0
           ? portfolioProject.galleryImages
           : [{ url: "", alt: "" }],
       )
 
-      // Set coaching squad members
       setCoachingSquadMembers(
-        portfolioProject.squad.length > 0 ? portfolioProject.squad : [{ name: "", role: "", avatarUrl: "" }],
+        portfolioProject.squad?.length > 0
+          ? portfolioProject.squad
+          : [{ name: "", role: "", avatarUrl: "" }],
       )
 
-      // Set Agilenesia squad members
       setAgilenesiaSquadMembers(
-        portfolioProject.agilenesiaSquad && portfolioProject.agilenesiaSquad.length > 0
+        portfolioProject.agilenesiaSquad?.length > 0
           ? portfolioProject.agilenesiaSquad
           : [{ name: "", role: "", avatarUrl: "" }],
       )
-    } else {
-      // Project not found, redirect to portfolio list
-      router.push("/admin/portfolio")
-    }
 
-    setIsLoading(false)
-  }, [params.id, router])
+      setIsLoading(false)
+    }
+  }
+    const fetchClients = async () => {
+          const { data, error } = await supabase.from("clients").select("id, name")
+          if (error) {
+            console.error("Failed to fetch clients:", error.message)
+          } else {
+            setClients(data ?? [])
+          }
+        }
+fetchClients()
+  fetchData()
+}, [params.id, router]) // <--- ini sekarang berada di tempat yang tepat
+
+
 
   const handleAddProduct = () => {
     setFormData({
@@ -218,27 +218,30 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
 
-    // In a real app, you would send this data to your backend
-    const updatedProject = {
-      ...project,
-      ...formData,
-      clientName: clients.find((c) => c.id === formData.clientId)?.name || "",
-      clientLogoUrl: clients.find((c) => c.id === formData.clientId)?.logoUrl || "",
-      coachingImageUrl: galleryImages[0]?.url || "", // Use the first image as main coaching image for compatibility
-      galleryImages: galleryImages.filter((img) => img.url.trim() !== ""), // Filter out empty image entries
-      squad: coachingSquadMembers.filter((member) => member.name.trim() !== ""),
-      agilenesiaSquad: agilenesiaSquadMembers.filter((member) => member.name.trim() !== ""), // Add Agilenesia Squad
-      lastUpdated: new Date().toISOString(),
-    }
-
-    console.log("Updated project data:", updatedProject)
-
-    // Navigate back to portfolio list
-    router.push("/admin/portfolio")
+  const updatedProject = {
+    ...project,
+    ...formData,
+    clientName: clients.find((c) => c.id === formData.clientId)?.name || "",
+    clientLogoUrl: clients.find((c) => c.id === formData.clientId)?.logoUrl || "",
+    coachingImageUrl: galleryImages[0]?.url || "",
+    galleryImages: galleryImages.filter((img) => img.url.trim() !== ""),
+    squad: coachingSquadMembers.filter((member) => member.name.trim() !== ""),
+    agilenesiaSquad: agilenesiaSquadMembers.filter((member) => member.name.trim() !== ""),
+    lastUpdated: new Date().toISOString(),
   }
+
+  try {
+    const savedProject = await updateProject(params.id, updatedProject)
+    console.log("✅ Project updated:", savedProject)
+    router.push("/admin/portfolio")
+  } catch (err) {
+    console.error("❌ Error saving project:", err)
+  }
+}
+
 
   if (isLoading) {
     return (
@@ -329,13 +332,12 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
                             <SelectValue placeholder="Select a client" />
                           </SelectTrigger>
                           <SelectContent className="max-h-60 overflow-y-auto">
-                            {" "}
-                            {/* Added classes here */}
-                            {clients.map((client) => (
-                              <SelectItem key={client.id} value={client.id}>
-                                {client.name}
-                              </SelectItem>
-                            ))}
+                              <SelectItem value="none">None</SelectItem>
+                                {clients.map((client) => (
+                                  <SelectItem key={client.id} value={String(client.id)}>
+                                    {client.name}
+                                  </SelectItem>
+                                ))}
                           </SelectContent>
                         </Select>
                       </div>
