@@ -75,6 +75,7 @@ export default function PortfolioPage() {
       const { data, error } = await supabase
         .from("projects")
         .select("*, clients(name)")
+        .order("lastUpdated", { ascending: false })
 
       if (error) {
         console.error("Error fetching projects:", error)
@@ -145,6 +146,7 @@ export default function PortfolioPage() {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
+      timeZone: "Asia/Jakarta", // 👉 zona waktu Indonesia
       year: "numeric",
       month: "short",
       day: "numeric",

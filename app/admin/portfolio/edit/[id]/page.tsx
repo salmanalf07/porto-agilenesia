@@ -11,7 +11,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ThemeToggleButton } from "@/components/theme-toggle-button"
 import { AgilenesiaLogo } from "@/components/agilenesia-logo"
 import { FadeInUp } from "@/components/page-transition"
-import { clients } from "@/lib/data"
 import { getUserSession, logout } from "@/app/actions"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -19,7 +18,7 @@ import { PlusIcon, XIcon, ArrowLeftIcon, SaveIcon, EyeIcon } from "lucide-react"
 import type { User } from "@/lib/data"
 import { RichTextEditor } from "@/components/rich-text-editor"
 import { ProjectGalleryInput, type ProjectImageInput } from "@/components/project-gallery-input"
-import { getProjectById, updateProject  } from "@/lib/portfolio-crud"
+import { getProjectById, updateProject } from "@/lib/portfolio-crud"
 import { supabase } from "@/lib/supabaseClient"
 
 interface TeamMember {
@@ -35,20 +34,20 @@ interface PortfolioProject {
   clientId?: string
   clientLogoUrl: string
   coachingImageUrl: string
-  galleryImages?: ProjectImageInput[] // Use ProjectImageInput for consistency
+  galleryImages?: ProjectImageInput[]
   products: string[]
   category: string
   duration: string
-  description: string // This will now store HTML content
+  description: string
   squad: TeamMember[]
-  agilenesiaSquad?: TeamMember[] // Add agilenesiaSquad to the interface
+  agilenesiaSquad?: TeamMember[] 
   status: "published" | "draft" | "archived"
   lastUpdated: string
 }
 
 export default function EditPortfolioPage({ params }: { params: { id: string } }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
+   const [clients, setClients] = useState<{ id: string; name: string; logoUrl?: string }[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [project, setProject] = useState<PortfolioProject | null>(null)
   const router = useRouter()
@@ -58,7 +57,7 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
     clientId: "",
     category: "",
     duration: "",
-    description: "", // This will now store HTML content
+    description: "",
     status: "published" as "published" | "draft" | "archived",
     products: [""] as string[],
   })
@@ -73,47 +72,103 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
   // Change from single coaching image to gallery images
   const [galleryImages, setGalleryImages] = useState<ProjectImageInput[]>([{ url: "", alt: "" }])
 
-  useEffect(() => {
-  const fetchData = async () => {
-    const session = await getUserSession()
-    setCurrentUser(session)
+   useEffect(() => {
+    const fetchData = async () => {
+      const session = await getUserSession()
+      setCurrentUser(session)
 
-    if (session?.role !== "admin") {
-      router.push("/")
-      return
-    }
-
-    const projectData = await getProjectById(params.id)
-
-    if (!projectData) {
-      router.push("/admin/portfolio")
-      return
-    }
-
-    if (projectData) {
-      let parsedProducts: string[] = []
-
-      try {
-        parsedProducts = JSON.parse(projectData.products || "[]")
-      } catch (e) {
-        console.error("Failed to parse products:", e)
-        parsedProducts = [""]
+      if (session?.role !== "admin") {
+        router.push("/")
+        return
       }
 
-      const clientId = projectData.clients?.id || ""
+      // Fetch clients
+      const { data: clientsData, error: clientsError } = await supabase.from("clients").select("id, name, logoUrl")
+
+      if (clientsError) {
+        console.error("Failed to fetch clients:", clientsError.message)
+      } else {
+        setClients(clientsData ?? [])
+      }
+
+      // Fetch project data
+      const projectData = await getProjectById(params.id)
+
+      if (!projectData) {
+        router.push("/admin/portfolio")
+        return
+      }
+
+      // Parse JSON fields safely
+      let parsedProducts: string[] = []
+      let parsedGalleryImages: ProjectImageInput[] = []
+      let parsedSquad: TeamMember[] = []
+      let parsedAgilenesiaSquad: TeamMember[] = []
+
+      try {
+        parsedProducts =
+          typeof projectData.products === "string"
+            ? JSON.parse(projectData.products)
+            : Array.isArray(projectData.products)
+              ? projectData.products
+              : []
+      } catch (e) {
+        console.error("Failed to parse products:", e)
+        parsedProducts = []
+      }
+
+      try {
+        parsedGalleryImages =
+          typeof projectData.galleryImages === "string"
+            ? JSON.parse(projectData.galleryImages)
+            : Array.isArray(projectData.galleryImages)
+              ? projectData.galleryImages
+              : []
+      } catch (e) {
+        console.error("Failed to parse galleryImages:", e)
+        parsedGalleryImages = []
+      }
+
+      try {
+        parsedSquad =
+          typeof projectData.squad === "string"
+            ? JSON.parse(projectData.squad)
+            : Array.isArray(projectData.squad)
+              ? projectData.squad
+              : []
+      } catch (e) {
+        console.error("Failed to parse squad:", e)
+        parsedSquad = []
+      }
+
+      try {
+        parsedAgilenesiaSquad =
+          typeof projectData.agilenesiaSquad === "string"
+            ? JSON.parse(projectData.agilenesiaSquad)
+            : Array.isArray(projectData.agilenesiaSquad)
+              ? projectData.agilenesiaSquad
+              : []
+      } catch (e) {
+        console.error("Failed to parse agilenesiaSquad:", e)
+        parsedAgilenesiaSquad = []
+      }
 
       const portfolioProject: PortfolioProject = {
         ...projectData,
-        clientId,
+        clientId: projectData.clientId || "",
         status: projectData.status ?? "published",
         lastUpdated: new Date().toISOString(),
+        products: parsedProducts,
+        galleryImages: parsedGalleryImages,
+        squad: parsedSquad,
+        agilenesiaSquad: parsedAgilenesiaSquad,
       }
 
       setProject(portfolioProject)
 
       setFormData({
         title: portfolioProject.title,
-        clientId: clientId,
+        clientId: portfolioProject.clientId || "",
         category: portfolioProject.category,
         duration: portfolioProject.duration,
         description: portfolioProject.description || "",
@@ -121,38 +176,19 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
         products: parsedProducts.length > 0 ? parsedProducts : [""],
       })
 
-      setGalleryImages(
-        portfolioProject.galleryImages?.length > 0
-          ? portfolioProject.galleryImages
-          : [{ url: "", alt: "" }],
-      )
+      setGalleryImages(parsedGalleryImages.length > 0 ? parsedGalleryImages : [{ url: "", alt: "" }])
 
-      setCoachingSquadMembers(
-        portfolioProject.squad?.length > 0
-          ? portfolioProject.squad
-          : [{ name: "", role: "", avatarUrl: "" }],
-      )
+      setCoachingSquadMembers(parsedSquad.length > 0 ? parsedSquad : [{ name: "", role: "", avatarUrl: "" }])
 
       setAgilenesiaSquadMembers(
-        portfolioProject.agilenesiaSquad?.length > 0
-          ? portfolioProject.agilenesiaSquad
-          : [{ name: "", role: "", avatarUrl: "" }],
+        parsedAgilenesiaSquad.length > 0 ? parsedAgilenesiaSquad : [{ name: "", role: "", avatarUrl: "" }],
       )
 
       setIsLoading(false)
     }
-  }
-    const fetchClients = async () => {
-          const { data, error } = await supabase.from("clients").select("id, name")
-          if (error) {
-            console.error("Failed to fetch clients:", error.message)
-          } else {
-            setClients(data ?? [])
-          }
-        }
-fetchClients()
-  fetchData()
-}, [params.id, router]) // <--- ini sekarang berada di tempat yang tepat
+
+    fetchData()
+  }, [params.id, router])
 
 
 
@@ -218,30 +254,37 @@ fetchClients()
     }
   }
 
+  
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
+    e.preventDefault()
 
-  const updatedProject = {
-    ...project,
-    ...formData,
-    clientName: clients.find((c) => c.id === formData.clientId)?.name || "",
-    clientLogoUrl: clients.find((c) => c.id === formData.clientId)?.logoUrl || "",
-    coachingImageUrl: galleryImages[0]?.url || "",
-    galleryImages: galleryImages.filter((img) => img.url.trim() !== ""),
-    squad: coachingSquadMembers.filter((member) => member.name.trim() !== ""),
-    agilenesiaSquad: agilenesiaSquadMembers.filter((member) => member.name.trim() !== ""),
-    lastUpdated: new Date().toISOString(),
+    // Find selected client
+    const selectedClient = clients.find((c) => c.id === formData.clientId)
+
+    const updatedProject = {
+      title: formData.title,
+      clientId: formData.clientId,
+      clientName: selectedClient?.name || "",
+      clientLogoUrl: selectedClient?.logoUrl || "",
+      category: formData.category,
+      duration: formData.duration,
+      description: formData.description,
+      status: formData.status,
+      products: formData.products.filter((p) => p.trim() !== ""),
+      coachingImageUrl: galleryImages[0]?.url || "",
+      galleryImages: galleryImages.filter((img) => img.url.trim() !== ""),
+      squad: coachingSquadMembers.filter((member) => member.name.trim() !== ""),
+      agilenesiaSquad: agilenesiaSquadMembers.filter((member) => member.name.trim() !== ""),
+    }
+
+    try {
+      const savedProject = await updateProject(params.id, updatedProject)
+      console.log("✅ Project updated:", savedProject)
+      router.push("/admin/portfolio")
+    } catch (err) {
+      console.error("❌ Error saving project:", err)
+    }
   }
-
-  try {
-    const savedProject = await updateProject(params.id, updatedProject)
-    console.log("✅ Project updated:", savedProject)
-    router.push("/admin/portfolio")
-  } catch (err) {
-    console.error("❌ Error saving project:", err)
-  }
-}
-
 
   if (isLoading) {
     return (
