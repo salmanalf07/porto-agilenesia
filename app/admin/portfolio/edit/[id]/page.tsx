@@ -72,7 +72,7 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
   // Change from single coaching image to gallery images
   const [galleryImages, setGalleryImages] = useState<ProjectImageInput[]>([{ url: "", alt: "" }])
 
-   useEffect(() => {
+  useEffect(() => {
     const fetchData = async () => {
       const session = await getUserSession()
       setCurrentUser(session)
@@ -82,109 +82,131 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
         return
       }
 
-      // Fetch clients
-      const { data: clientsData, error: clientsError } = await supabase.from("clients").select("id, name, logoUrl")
-
-      if (clientsError) {
-        console.error("Failed to fetch clients:", clientsError.message)
-      } else {
-        setClients(clientsData ?? [])
-      }
-
-      // Fetch project data
-      const projectData = await getProjectById(params.id)
-
-      if (!projectData) {
-        router.push("/admin/portfolio")
-        return
-      }
-
-      // Parse JSON fields safely
-      let parsedProducts: string[] = []
-      let parsedGalleryImages: ProjectImageInput[] = []
-      let parsedSquad: TeamMember[] = []
-      let parsedAgilenesiaSquad: TeamMember[] = []
-
       try {
-        parsedProducts =
-          typeof projectData.products === "string"
-            ? JSON.parse(projectData.products)
-            : Array.isArray(projectData.products)
-              ? projectData.products
-              : []
-      } catch (e) {
-        console.error("Failed to parse products:", e)
-        parsedProducts = []
+        // Fetch clients first
+        const { data: clientsData, error: clientsError } = await supabase
+          .from("clients")
+          .select("id, name, logoUrl")
+          .order("name")
+
+        if (clientsError) {
+          console.error("Failed to fetch clients:", clientsError.message)
+        } else {
+          setClients(clientsData ?? [])
+        }
+
+        // Fetch project data
+        const projectData = await getProjectById(params.id)
+
+        if (!projectData) {
+          router.push("/admin/portfolio")
+          return
+        }
+
+        console.log("Raw project data:", projectData)
+
+        // Parse JSON fields safely
+        let parsedProducts: string[] = []
+        let parsedGalleryImages: ProjectImageInput[] = []
+        let parsedSquad: TeamMember[] = []
+        let parsedAgilenesiaSquad: TeamMember[] = []
+
+        try {
+          parsedProducts =
+            typeof projectData.products === "string"
+              ? JSON.parse(projectData.products)
+              : Array.isArray(projectData.products)
+                ? projectData.products
+                : []
+        } catch (e) {
+          console.error("Failed to parse products:", e)
+          parsedProducts = []
+        }
+
+        try {
+          parsedGalleryImages =
+            typeof projectData.galleryImages === "string"
+              ? JSON.parse(projectData.galleryImages)
+              : Array.isArray(projectData.galleryImages)
+                ? projectData.galleryImages
+                : []
+        } catch (e) {
+          console.error("Failed to parse galleryImages:", e)
+          parsedGalleryImages = []
+        }
+
+        try {
+          parsedSquad =
+            typeof projectData.squad === "string"
+              ? JSON.parse(projectData.squad)
+              : Array.isArray(projectData.squad)
+                ? projectData.squad
+                : []
+        } catch (e) {
+          console.error("Failed to parse squad:", e)
+          parsedSquad = []
+        }
+
+        try {
+          parsedAgilenesiaSquad =
+            typeof projectData.agilenesiaSquad === "string"
+              ? JSON.parse(projectData.agilenesiaSquad)
+              : Array.isArray(projectData.agilenesiaSquad)
+                ? projectData.agilenesiaSquad
+                : []
+        } catch (e) {
+          console.error("Failed to parse agilenesiaSquad:", e)
+          parsedAgilenesiaSquad = []
+        }
+
+        // Handle client data - check if it comes from the join or direct field
+        let clientId = ""
+        if (projectData.clients && typeof projectData.clients === "object") {
+          // Data comes from join
+          clientId = projectData.clients.id || ""
+        } else if (projectData.clientId) {
+          // Data comes from direct field
+          clientId = projectData.clientId
+        }
+
+        console.log("Parsed client ID:", clientId)
+
+        const portfolioProject: PortfolioProject = {
+          ...projectData,
+          clientId: String(clientId),
+          status: projectData.status ?? "published",
+          lastUpdated: projectData.lastUpdated || new Date().toISOString(),
+          products: parsedProducts,
+          galleryImages: parsedGalleryImages,
+          squad: parsedSquad,
+          agilenesiaSquad: parsedAgilenesiaSquad,
+        }
+
+        setProject(portfolioProject)
+
+        setFormData({
+          title: portfolioProject.title || "",
+          clientId: String(clientId),
+          category: portfolioProject.category || "",
+          duration: portfolioProject.duration || "",
+          description: portfolioProject.description || "",
+          status: portfolioProject.status,
+          products: parsedProducts.length > 0 ? parsedProducts : [""],
+        })
+
+        setGalleryImages(parsedGalleryImages.length > 0 ? parsedGalleryImages : [{ url: "", alt: "" }])
+
+        setCoachingSquadMembers(parsedSquad.length > 0 ? parsedSquad : [{ name: "", role: "", avatarUrl: "" }])
+
+        setAgilenesiaSquadMembers(
+          parsedAgilenesiaSquad.length > 0 ? parsedAgilenesiaSquad : [{ name: "", role: "", avatarUrl: "" }],
+        )
+
+        setIsLoading(false)
+      } catch (error) {
+        console.error("Error fetching data:", error)
+        setIsLoading(false)
       }
-
-      try {
-        parsedGalleryImages =
-          typeof projectData.galleryImages === "string"
-            ? JSON.parse(projectData.galleryImages)
-            : Array.isArray(projectData.galleryImages)
-              ? projectData.galleryImages
-              : []
-      } catch (e) {
-        console.error("Failed to parse galleryImages:", e)
-        parsedGalleryImages = []
-      }
-
-      try {
-        parsedSquad =
-          typeof projectData.squad === "string"
-            ? JSON.parse(projectData.squad)
-            : Array.isArray(projectData.squad)
-              ? projectData.squad
-              : []
-      } catch (e) {
-        console.error("Failed to parse squad:", e)
-        parsedSquad = []
-      }
-
-      try {
-        parsedAgilenesiaSquad =
-          typeof projectData.agilenesiaSquad === "string"
-            ? JSON.parse(projectData.agilenesiaSquad)
-            : Array.isArray(projectData.agilenesiaSquad)
-              ? projectData.agilenesiaSquad
-              : []
-      } catch (e) {
-        console.error("Failed to parse agilenesiaSquad:", e)
-        parsedAgilenesiaSquad = []
-      }
-
-      const portfolioProject: PortfolioProject = {
-        ...projectData,
-        clientId: projectData.clientId || "",
-        status: projectData.status ?? "published",
-        lastUpdated: new Date().toISOString(),
-        products: parsedProducts,
-        galleryImages: parsedGalleryImages,
-        squad: parsedSquad,
-        agilenesiaSquad: parsedAgilenesiaSquad,
-      }
-
-      setProject(portfolioProject)
-
-      setFormData({
-        title: portfolioProject.title,
-        clientId: portfolioProject.clientId || "",
-        category: portfolioProject.category,
-        duration: portfolioProject.duration,
-        description: portfolioProject.description || "",
-        status: portfolioProject.status,
-        products: parsedProducts.length > 0 ? parsedProducts : [""],
-      })
-
-      setGalleryImages(parsedGalleryImages.length > 0 ? parsedGalleryImages : [{ url: "", alt: "" }])
-
-      setCoachingSquadMembers(parsedSquad.length > 0 ? parsedSquad : [{ name: "", role: "", avatarUrl: "" }])
-
-      setAgilenesiaSquadMembers(
-        parsedAgilenesiaSquad.length > 0 ? parsedAgilenesiaSquad : [{ name: "", role: "", avatarUrl: "" }],
-      )
-
-      setIsLoading(false)
     }
 
     fetchData()
@@ -263,7 +285,7 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
 
     const updatedProject = {
       title: formData.title,
-      clientId: formData.clientId,
+      clientId: formData.clientId === "none" ? null : formData.clientId,
       clientName: selectedClient?.name || "",
       clientLogoUrl: selectedClient?.logoUrl || "",
       category: formData.category,
@@ -366,23 +388,24 @@ export default function EditPortfolioPage({ params }: { params: { id: string } }
 
                       <div>
                         <Label htmlFor="client">Client</Label>
-                        <Select
-                          value={formData.clientId}
-                          onValueChange={(value) => setFormData({ ...formData, clientId: value })}
-                          required
+                       <Select
+                        value={formData.clientId}
+                        onValueChange={(value) => setFormData({ ...formData, clientId: value })}
+                        required
                         >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a client" />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-60 overflow-y-auto">
-                              <SelectItem value="none">None</SelectItem>
-                                {clients.map((client) => (
-                                  <SelectItem key={client.id} value={String(client.id)}>
-                                    {client.name}
-                                  </SelectItem>
-                                ))}
-                          </SelectContent>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a client" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-60 overflow-y-auto">
+                          <SelectItem value="none">None</SelectItem>
+                          {clients.map((client) => (
+                            <SelectItem key={String(client.id)} value={String(client.id)}>
+                              {client.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
                         </Select>
+
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
