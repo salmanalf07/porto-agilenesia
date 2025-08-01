@@ -25,17 +25,6 @@ export default function LoginPage() {
             Login
           </Button>
         </form>
-        <div className="text-center text-sm text-muted-foreground mt-4">
-          <p>Contoh Akun:</p>
-          <p>
-            Admin: <span className="font-semibold">admin@agilenesia.com</span> /{" "}
-            <span className="font-semibold">adminpassword</span>
-          </p>
-          <p>
-            Client: <span className="font-semibold">client@agilenesia.com</span> /{" "}
-            <span className="font-semibold">clientpassword</span>
-          </p>
-        </div>
       </div>
     </div>
   )

@@ -1,6 +1,5 @@
 "use client"
 import Image from "next/image"
-import { projects } from "@/lib/data"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ArrowRightIcon, FilterIcon } from "lucide-react"
@@ -14,40 +13,133 @@ import { motion } from "framer-motion"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { logout, getUserSession } from "@/app/actions"
+import { supabase } from "@/lib/supabaseClient"
 import type { User } from "@/lib/data"
 
+interface ProjectData {
+  id: string
+  title: string
+  clientName: string
+  clientId?: string
+  clientLogoUrl?: string
+  coachingImageUrl?: string
+  category: string
+  duration: string
+  description: string
+  status: string
+  products: string
+  squad: string
+  galleryImages?: string
+  agilenesiaSquad?: string
+  clients?: {
+    id: string
+    name: string
+    logoUrl?: string
+  }
+}
+
+interface ExtendedUser extends User {
+  clientId?: string
+}
+
 export default function LandingPage() {
-  const featuredProject = projects[0]
+  const [projects, setProjects] = useState<ProjectData[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
-  const [isLoading, setIsLoading] = useState(false)
-  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [user, setUser] = useState<ExtendedUser | null>(null)
   const router = useRouter()
 
   useEffect(() => {
-    const fetchUser = async () => {
-      const session = await getUserSession()
-      console.log(session)
-      setUser(session)
+    const fetchData = async () => {
+      try {
+        setIsLoading(true)
+
+        // Fetch user session
+        const session = await getUserSession()
+
+        // If user exists, get their client information
+        let extendedUser: ExtendedUser | null = session
+        if (session && session.role === "client") {
+          // Get user's clientId from users table
+          const { data: userData, error: userError } = await supabase
+            .from("users")
+            .select("clientId")
+            .eq("id", session.id)
+            .single()
+
+          if (!userError && userData) {
+            extendedUser = { ...session, clientId: userData.clientId }
+          }
+        }
+
+        setUser(extendedUser)
+
+        // Fetch all projects from database with client relationship
+        const { data: projectsData, error: projectsError } = await supabase
+          .from("projects")
+          .select(`
+            *,
+            clients (
+              id,
+              name,
+              logoUrl
+            )
+          `)
+          .order("lastUpdated", { ascending: false })
+
+        if (projectsError) {
+          console.error("Error fetching projects:", projectsError)
+          setProjects([])
+          return
+        }
+
+        console.log("Fetched projects:", projectsData)
+
+        // Filter projects based on user role
+        let filteredProjects = projectsData || []
+
+        if (extendedUser?.role === "client" && extendedUser?.clientId) {
+          // If user is a client, only show projects where clientId matches
+          filteredProjects =
+            projectsData?.filter((project: ProjectData) => {
+              return project.clientId === extendedUser.clientId
+            }) || []
+          console.log("Filtered projects for client ID:", extendedUser.clientId, filteredProjects)
+        } else if (extendedUser?.role === "admin") {
+          // If user is admin, show all projects
+          filteredProjects = projectsData || []
+          console.log("All projects for admin:", filteredProjects)
+        } else {
+          // If no user or other role, show published projects only
+          filteredProjects = projectsData?.filter((project: ProjectData) => project.status === "published") || []
+        }
+
+        setProjects(filteredProjects)
+      } catch (error) {
+        console.error("Error fetching data:", error)
+        setProjects([])
+      } finally {
+        setIsLoading(false)
+      }
     }
-    fetchUser()
+
+    fetchData()
   }, [])
 
   const categories = useMemo(() => {
-    const allCategories = projects.map((p) => p.category)
+    const allCategories = projects.map((p) => p.category).filter(Boolean)
     return ["all", ...Array.from(new Set(allCategories))]
-  }, [])
+  }, [projects])
 
   const filteredProjects = useMemo(() => {
     if (selectedCategory === "all") {
       return projects
     }
     return projects.filter((p) => p.category === selectedCategory)
-  }, [selectedCategory])
+  }, [selectedCategory, projects])
 
   const handleCategoryChange = (value: string) => {
-    setIsLoading(true)
     setSelectedCategory(value)
-    setTimeout(() => setIsLoading(false), 300)
   }
 
   const handleProjectClick = (projectId: string) => {
@@ -56,8 +148,27 @@ export default function LandingPage() {
 
   // Function to strip HTML tags that works on both server and client
   const stripHtmlTags = (html: string) => {
-    // Simple regex-based approach that works on both server and client
+    if (!html) return ""
     return html.replace(/<[^>]*>/g, "")
+  }
+
+  // Parse JSON strings for display
+  const parseSquad = (squadString: string) => {
+    try {
+      if (!squadString) return []
+      return JSON.parse(squadString)
+    } catch {
+      return []
+    }
+  }
+
+  const featuredProject = filteredProjects[0] || {
+    clientName: user?.role === "client" ? "Your Organization" : "Our Valued Clients",
+    title: "Agile Transformation",
+  }
+
+  const getClientName = (project: ProjectData) => {
+    return project.clients?.name || project.clientName || "Unknown Client"
   }
 
   return (
@@ -83,7 +194,7 @@ export default function LandingPage() {
             {user && (
               <Button
                 variant="outline"
-                className="border-primary text-primary hover:bg-primary/10"
+                className="border-primary text-primary hover:bg-primary/10 bg-transparent"
                 onClick={() => logout()}
               >
                 Logout
@@ -106,8 +217,9 @@ export default function LandingPage() {
                 </FadeInUp>
                 <FadeInUp delay={0.2}>
                   <p className="text-body-large text-medium-contrast max-w-2xl">
-                    Discover how Agilenesia empowers clients like {featuredProject.clientName} to achieve transformative
-                    results through expert agile coaching and strategic guidance.
+                    {user?.role === "client"
+                      ? `Welcome back! Explore your coaching portfolio and see how Agilenesia is helping ${getClientName(featuredProject)} achieve transformative results.`
+                      : `Discover how Agilenesia empowers clients like ${getClientName(featuredProject)} to achieve transformative results through expert agile coaching and strategic guidance.`}
                   </p>
                 </FadeInUp>
                 <FadeInUp delay={0.4}>
@@ -120,7 +232,7 @@ export default function LandingPage() {
                         portfolioSection?.scrollIntoView({ behavior: "smooth" })
                       }}
                     >
-                      Explore Coaching Portfolio
+                      {user?.role === "client" ? "View Your Portfolio" : "Explore Coaching Portfolio"}
                       <ArrowRightIcon className="ml-2 h-5 w-5" />
                     </Button>
                   </div>
@@ -167,26 +279,32 @@ export default function LandingPage() {
               <div className="flex flex-col sm:flex-row justify-between items-center mb-12 md:mb-16">
                 <div className="text-center sm:text-left mb-6 sm:mb-0">
                   <p className="text-overline text-primary mb-2">Portfolio</p>
-                  <h2 className="text-title font-heading text-high-contrast">Our Coaching Portfolio</h2>
+                  <h2 className="text-title font-heading text-high-contrast">
+                    {user?.role === "client" ? "Your Coaching Portfolio" : "Our Coaching Portfolio"}
+                  </h2>
                   <p className="text-body text-medium-contrast mt-3 max-w-lg">
-                    Explore our successful coaching engagements and transformative results
+                    {user?.role === "client"
+                      ? "Review your coaching engagements and transformation progress"
+                      : "Explore our successful coaching engagements and transformative results"}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <FilterIcon className="h-5 w-5 text-low-contrast" />
-                  <Select value={selectedCategory} onValueChange={handleCategoryChange}>
-                    <SelectTrigger className="w-[180px] bg-card text-caption">
-                      <SelectValue placeholder="Filter by category" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-60 overflow-y-auto">
-                      {categories.map((category) => (
-                        <SelectItem key={category} value={category} className="text-caption">
-                          {category === "all" ? "All Categories" : category}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {categories.length > 1 && (
+                  <div className="flex items-center gap-3">
+                    <FilterIcon className="h-5 w-5 text-low-contrast" />
+                    <Select value={selectedCategory} onValueChange={handleCategoryChange}>
+                      <SelectTrigger className="w-[180px] bg-card text-caption">
+                        <SelectValue placeholder="Filter by category" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60 overflow-y-auto">
+                        {categories.map((category) => (
+                          <SelectItem key={category} value={category} className="text-caption">
+                            {category === "all" ? "All Categories" : category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             </FadeInUp>
 
@@ -199,83 +317,92 @@ export default function LandingPage() {
             ) : filteredProjects.length > 0 ? (
               <StaggerContainer>
                 <div className="grid gap-8 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                  {filteredProjects.map((project, index) => (
-                    <StaggerItem key={project.id}>
-                      <motion.div
-                        whileHover={{
-                          y: -8,
-                          scale: 1.02,
-                          rotateX: 5,
-                          rotateY: 5,
-                        }}
-                        transition={{
-                          type: "spring",
-                          stiffness: 300,
-                          damping: 30,
-                        }}
-                        style={{
-                          transformStyle: "preserve-3d",
-                          perspective: 1000,
-                        }}
-                      >
-                        <Card
-                          className={`h-full overflow-hidden transition-all duration-300 ease-out hover:shadow-2xl hover:border-primary/50 group cursor-pointer ${
-                            index % 2 === 0 ? "bg-card" : "bg-muted/30 dark:bg-card/50"
-                          }`}
-                          onClick={() => handleProjectClick(project.id)}
+                  {filteredProjects.map((project, index) => {
+                    const squad = parseSquad(project.squad)
+                    const clientName = getClientName(project)
+
+                    return (
+                      <StaggerItem key={project.id}>
+                        <motion.div
+                          whileHover={{
+                            y: -8,
+                            scale: 1.02,
+                            rotateX: 5,
+                            rotateY: 5,
+                          }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 300,
+                            damping: 30,
+                          }}
+                          style={{
+                            transformStyle: "preserve-3d",
+                            perspective: 1000,
+                          }}
                         >
-                          <div className="relative overflow-hidden">
-                            <Image
-                              src={project.coachingImageUrl || "/placeholder.svg"}
-                              alt={project.title}
-                              width={400}
-                              height={200}
-                              className="object-cover w-full h-48 transition-transform duration-300"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                          </div>
-                          <CardHeader className="p-6">
-                            <div className="space-y-2">
-                              <p className="text-overline text-secondary">{project.category}</p>
-                              <CardTitle className="text-xl font-heading text-high-contrast group-hover:text-primary transition-colors duration-300 leading-snug">
-                                {project.title}
-                              </CardTitle>
+                          <Card
+                            className={`h-full overflow-hidden transition-all duration-300 ease-out hover:shadow-2xl hover:border-primary/50 group cursor-pointer ${
+                              index % 2 === 0 ? "bg-card" : "bg-muted/30 dark:bg-card/50"
+                            }`}
+                            onClick={() => handleProjectClick(project.id)}
+                          >
+                            <div className="relative overflow-hidden">
+                              <Image
+                                src={project.coachingImageUrl || "/placeholder.svg"}
+                                alt={project.title}
+                                width={400}
+                                height={200}
+                                className="object-cover w-full h-48 transition-transform duration-300"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                             </div>
-                          </CardHeader>
-                          <CardContent className="p-6 pt-0 space-y-4">
-                            <p className="text-body text-medium-contrast leading-relaxed line-clamp-3">
-                              {stripHtmlTags(project.description)}
-                            </p>
-                            <div className="flex justify-between items-center pt-2">
-                              <div className="space-y-1">
-                                <p className="text-caption font-medium text-high-contrast">
-                                  Client: {project.clientName}
-                                </p>
-                                <p className="text-xs text-low-contrast">Team: {project.squad.length} members</p>
+                            <CardHeader className="p-6">
+                              <div className="space-y-2">
+                                <p className="text-overline text-secondary">{project.category}</p>
+                                <CardTitle className="text-xl font-heading text-high-contrast group-hover:text-primary transition-colors duration-300 leading-snug">
+                                  {project.title}
+                                </CardTitle>
                               </div>
-                              <Button
-                                size="sm"
-                                className="bg-primary hover:bg-agile-teal-dark shadow-md transition-colors duration-300 text-caption font-medium px-3 py-2 force-white-text"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleProjectClick(project.id)
-                                }}
-                              >
-                                View Details
-                                <ArrowRightIcon className="ml-1 h-4 w-4" />
-                              </Button>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </motion.div>
-                    </StaggerItem>
-                  ))}
+                            </CardHeader>
+                            <CardContent className="p-6 pt-0 space-y-4">
+                              <p className="text-body text-medium-contrast leading-relaxed line-clamp-3">
+                                {stripHtmlTags(project.description || "")}
+                              </p>
+                              <div className="flex justify-between items-center pt-2">
+                                <div className="space-y-1">
+                                  <p className="text-caption font-medium text-high-contrast">Client: {clientName}</p>
+                                  <p className="text-xs text-low-contrast">Team: {squad.length} members</p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  className="bg-primary hover:bg-agile-teal-dark shadow-md transition-colors duration-300 text-caption font-medium px-3 py-2 force-white-text"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleProjectClick(project.id)
+                                  }}
+                                >
+                                  View Details
+                                  <ArrowRightIcon className="ml-1 h-4 w-4" />
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      </StaggerItem>
+                    )
+                  })}
                 </div>
               </StaggerContainer>
             ) : (
               <FadeInUp>
                 <div className="text-center py-16">
-                  <p className="text-body text-medium-contrast">No projects found for this category.</p>
+                  <p className="text-body text-medium-contrast">
+                    {user?.role === "client"
+                      ? "No projects found for your organization. Please contact your administrator."
+                      : selectedCategory === "all"
+                        ? "No projects found."
+                        : "No projects found for this category."}
+                  </p>
                 </div>
               </FadeInUp>
             )}
