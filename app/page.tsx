@@ -74,8 +74,9 @@ export default function LandingPage() {
 
         setUser(extendedUser)
 
-        // Fetch all projects from database with client relationship
-        const { data: projectsData, error: projectsError } = await supabase
+        // Fetch projects from database with client relationship
+        // Only fetch published projects for non-admin users
+        let query = supabase
           .from("projects")
           .select(`
             *,
@@ -86,6 +87,13 @@ export default function LandingPage() {
             )
           `)
           .order("lastUpdated", { ascending: false })
+
+        // If user is not admin, only show published projects
+        if (!extendedUser || extendedUser.role !== "admin") {
+          query = query.eq("status", "published")
+        }
+
+        const { data: projectsData, error: projectsError } = await query
 
         if (projectsError) {
           console.error("Error fetching projects:", projectsError)
@@ -106,12 +114,12 @@ export default function LandingPage() {
             }) || []
           console.log("Filtered projects for client ID:", extendedUser.clientId, filteredProjects)
         } else if (extendedUser?.role === "admin") {
-          // If user is admin, show all projects
+          // If user is admin, show all projects (published and draft)
           filteredProjects = projectsData || []
           console.log("All projects for admin:", filteredProjects)
         } else {
-          // If no user or other role, show published projects only
-          filteredProjects = projectsData?.filter((project: ProjectData) => project.status === "published") || []
+          // If no user, show only published projects (already filtered in query)
+          filteredProjects = projectsData || []
         }
 
         setProjects(filteredProjects)
@@ -355,6 +363,11 @@ export default function LandingPage() {
                                 className="object-cover w-full h-48 transition-transform duration-300"
                               />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                              {user?.role === "admin" && project.status !== "published" && (
+                                <div className="absolute top-2 right-2 bg-yellow-500 text-white px-2 py-1 rounded text-xs font-medium">
+                                  Draft
+                                </div>
+                              )}
                             </div>
                             <CardHeader className="p-6">
                               <div className="space-y-2">
