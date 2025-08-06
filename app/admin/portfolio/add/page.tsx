@@ -156,7 +156,7 @@ export default function AddPortfolioPage() {
 
   try {
     const savedProject = await createProject(newProject);
-    console.log("✅ Project created:", savedProject);
+    // console.log("✅ Project created:", savedProject);
     router.push("/admin/portfolio");
   } catch (err) {
     console.error("❌ Error saving project:", err);

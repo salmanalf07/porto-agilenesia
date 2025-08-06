@@ -7,21 +7,10 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  PlusIcon,
-  EditIcon,
-  TrashIcon,
-  FolderIcon,
-  SearchIcon,
-  FilterIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  EyeIcon,
-} from "lucide-react"
+import { PlusIcon, EditIcon, TrashIcon, FolderIcon, SearchIcon, FilterIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon } from 'lucide-react'
 import { ThemeToggleButton } from "@/components/theme-toggle-button"
 import { AgilenesiaLogo } from "@/components/agilenesia-logo"
 import { FadeInUp } from "@/components/page-transition"
-import { projects as initialProjects, clients, type Project } from "@/lib/data" // Import clients
 import { getUserSession, logout } from "@/app/actions"
 import Link from "next/link"
 import {
@@ -38,9 +27,15 @@ import {
 import { useRouter } from "next/navigation"
 import type { User } from "@/lib/data"
 import { supabase } from "@/lib/supabaseClient"
+import { deleteProject } from "@/lib/portfolio-crud"
 
 // Extended Project type with status and lastUpdated
-interface PortfolioProject extends Project {
+interface PortfolioProject {
+  id: string
+  title: string
+  clientName: string
+  clientId?: string
+  category: string
   status: "published" | "draft" | "archived"
   lastUpdated: string
 }
@@ -49,12 +44,13 @@ export default function PortfolioPage() {
   const [projects, setProjects] = useState<PortfolioProject[]>([])
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const router = useRouter()
 
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "published" | "draft" | "archived">("all")
-  const [clientFilter, setClientFilter] = useState<string>("all") // Changed from categoryFilter
+  const [clientFilter, setClientFilter] = useState<string>("all")
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -71,14 +67,15 @@ export default function PortfolioPage() {
       }
     }
     fetchUser()
-      const fetchProjects = async () => {
+
+    const fetchProjects = async () => {
       const { data, error } = await supabase
         .from("projects")
         .select("*, clients(name)")
         .order("lastUpdated", { ascending: false })
 
       if (error) {
-        console.error("Error fetching projects:", error)
+        // console.error("Error fetching projects:", error)
       } else if (data) {
         const transformed = data.map((project) => ({
           ...project,
@@ -93,20 +90,15 @@ export default function PortfolioPage() {
     fetchProjects()
 
     const fetchClients = async () => {
-        const { data, error } = await supabase.from("clients").select("id, name")
-        if (error) {
-          console.error("Failed to fetch clients:", error.message)
-        } else {
-          setClients(data ?? [])
-        }
+      const { data, error } = await supabase.from("clients").select("id, name")
+      if (error) {
+        // console.error("Failed to fetch clients:", error.message)
+      } else {
+        setClients(data ?? [])
       }
+    }
     fetchClients()
   }, [router])
-
-  // Get unique clients for filter
-  const filterableClients = useMemo(() => {
-    return ["all", ...clients.map((c) => c.id)] // Use client IDs for filter values
-  }, [])
 
   // Filter and paginate projects
   const filteredProjects = useMemo(() => {
@@ -121,12 +113,12 @@ export default function PortfolioPage() {
       // Apply status filter
       const matchesStatus = statusFilter === "all" || project.status === statusFilter
 
-      // Apply client filter (using clientName for display, but clientId for filtering)
+      // Apply client filter
       const matchesClient = clientFilter === "all" || project.clientId === clientFilter
 
       return matchesSearch && matchesStatus && matchesClient
     })
-  }, [projects, searchQuery, statusFilter, clientFilter]) // Changed categoryFilter to clientFilter
+  }, [projects, searchQuery, statusFilter, clientFilter])
 
   // Calculate pagination
   const totalPages = Math.ceil(filteredProjects.length / itemsPerPage)
@@ -138,15 +130,37 @@ export default function PortfolioPage() {
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, clientFilter]) // Changed categoryFilter to clientFilter
+  }, [searchQuery, statusFilter, clientFilter])
 
-  const handleDelete = (projectId: string) => {
-    setProjects(projects.filter((project) => project.id !== projectId))
+  const handleDelete = async (projectId: string) => {
+    setIsDeleting(projectId)
+    
+    try {
+      // console.log("🗑️ Attempting to delete project:", projectId)
+      const success = await deleteProject(projectId)
+      
+      if (success) {
+        // console.log("✅ Project deleted successfully")
+        // Remove from local state
+        setProjects(projects.filter((project) => project.id !== projectId))
+        
+        // Show success message (you can replace with toast notification)
+        alert("Project deleted successfully!")
+      } else {
+        // console.error("❌ Failed to delete project")
+        alert("Failed to delete project. Please try again.")
+      }
+    } catch (error) {
+      // console.error("❌ Error deleting project:", error)
+      alert("An error occurred while deleting the project.")
+    } finally {
+      setIsDeleting(null)
+    }
   }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
-      timeZone: "Asia/Jakarta", // 👉 zona waktu Indonesia
+      timeZone: "Asia/Jakarta",
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -260,13 +274,11 @@ export default function PortfolioPage() {
                       <SelectTrigger className="w-[150px]">
                         <div className="flex items-center gap-2">
                           <FilterIcon className="h-4 w-4" />
-                          <span>Client</span> {/* Changed label to Client */}
+                          <span>Client</span>
                         </div>
                       </SelectTrigger>
                       <SelectContent className="max-h-60 overflow-y-auto">
-                        {" "}
-                        {/* Added classes here */}
-                        <SelectItem value="all">All Clients</SelectItem> {/* Changed label to All Clients */}
+                        <SelectItem value="all">All Clients</SelectItem>
                         {clients.map((client) => (
                           <SelectItem key={client.id} value={client.id}>
                             {client.name}
@@ -324,8 +336,16 @@ export default function PortfolioPage() {
                               </Button>
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                  <Button size="sm" variant="destructive">
-                                    <TrashIcon className="h-4 w-4" />
+                                  <Button 
+                                    size="sm" 
+                                    variant="destructive"
+                                    disabled={isDeleting === project.id}
+                                  >
+                                    {isDeleting === project.id ? (
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                    ) : (
+                                      <TrashIcon className="h-4 w-4" />
+                                    )}
                                   </Button>
                                 </AlertDialogTrigger>
                                 <AlertDialogContent>
@@ -333,14 +353,16 @@ export default function PortfolioPage() {
                                     <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                                     <AlertDialogDescription>
                                       This action cannot be undone. This will permanently delete the portfolio project{" "}
-                                      <span className="font-semibold">{project.title}</span> and remove it from our
-                                      servers.
+                                      <span className="font-semibold">"{project.title}"</span> and remove all associated images from storage.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDelete(project.id)}>
-                                      Continue
+                                    <AlertDialogAction 
+                                      onClick={() => handleDelete(project.id)}
+                                      className="bg-red-600 hover:bg-red-700"
+                                    >
+                                      Delete Project
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
                                 </AlertDialogContent>

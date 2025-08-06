@@ -14,6 +14,8 @@ export async function uploadImageToSupabase(file: File, bucket = "project-images
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
     const filePath = `projects/${fileName}`
 
+    console.log("Uploading file to:", filePath)
+
     // Upload file to Supabase Storage
     const { data, error } = await supabase.storage.from(bucket).upload(filePath, file, {
       cacheControl: "3600",
@@ -25,11 +27,14 @@ export async function uploadImageToSupabase(file: File, bucket = "project-images
       return null
     }
 
+    console.log("Upload successful:", data)
+
     // Get public URL
     const {
       data: { publicUrl },
     } = supabase.storage.from(bucket).getPublicUrl(filePath)
 
+    console.log("Public URL:", publicUrl)
     return publicUrl
   } catch (error) {
     console.error("Error in uploadImageToSupabase:", error)
@@ -39,10 +44,26 @@ export async function uploadImageToSupabase(file: File, bucket = "project-images
 
 export async function deleteImageFromSupabase(url: string, bucket = "project-images"): Promise<boolean> {
   try {
+    if (!url || !url.includes("supabase")) {
+      console.log("URL is not a Supabase storage URL, skipping deletion:", url)
+      return true
+    }
+
     // Extract file path from URL
+    // URL format: https://project.supabase.co/storage/v1/object/public/bucket/path/filename
     const urlParts = url.split("/")
-    const fileName = urlParts[urlParts.length - 1]
-    const filePath = `projects/${fileName}`
+    const bucketIndex = urlParts.findIndex((part) => part === bucket)
+    
+    if (bucketIndex === -1) {
+      console.error("Could not find bucket in URL:", url)
+      return false
+    }
+
+    // Get the path after the bucket name
+    const pathParts = urlParts.slice(bucketIndex + 1)
+    const filePath = pathParts.join("/")
+
+    console.log("Attempting to delete file:", filePath, "from bucket:", bucket)
 
     const { error } = await supabase.storage.from(bucket).remove([filePath])
 
@@ -51,6 +72,7 @@ export async function deleteImageFromSupabase(url: string, bucket = "project-ima
       return false
     }
 
+    console.log("Successfully deleted file:", filePath)
     return true
   } catch (error) {
     console.error("Error in deleteImageFromSupabase:", error)
@@ -86,4 +108,28 @@ export function formatFileSize(bytes: number): string {
   const sizes = ["Bytes", "KB", "MB", "GB"]
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+}
+
+// Helper function to extract file path from Supabase URL
+export function extractFilePathFromSupabaseUrl(url: string, bucket = "project-images"): string | null {
+  try {
+    if (!url || !url.includes("supabase")) {
+      return null
+    }
+
+    // URL format: https://project.supabase.co/storage/v1/object/public/bucket/path/filename
+    const urlParts = url.split("/")
+    const bucketIndex = urlParts.findIndex((part) => part === bucket)
+    
+    if (bucketIndex === -1) {
+      return null
+    }
+
+    // Get the path after the bucket name
+    const pathParts = urlParts.slice(bucketIndex + 1)
+    return pathParts.join("/")
+  } catch (error) {
+    console.error("Error extracting file path:", error)
+    return null
+  }
 }
