@@ -24,7 +24,7 @@ import {
 import { ThemeToggleButton } from "@/components/theme-toggle-button"
 import { AgilenesiaLogo } from "@/components/agilenesia-logo"
 import { FadeInUp } from "@/components/page-transition"
-import { clients, type User, getClientNameById } from "@/lib/data" // Tetap import clients dan User interface
+import type { User } from "@/lib/data" // Tetap import clients dan User interface
 import { getUserSession, logout } from "@/app/actions"
 import Link from "next/link"
 import {
@@ -52,7 +52,7 @@ export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all")
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "client">("all")
-  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
+  const [clientsList, setClientsList] = useState<{ id: string; name: string }[]>([]) // Change clients to clientsList
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -61,6 +61,7 @@ export default function UsersPage() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
+    password: "",
     role: "client" as "admin" | "client",
     status: "active" as "active" | "inactive",
     clientId: "none" as string,
@@ -68,24 +69,23 @@ export default function UsersPage() {
 
   // Fetch user session on component mount
   useEffect(() => {
-  const fetchUser = async () => {
-    const session = await getUserSession()
-    setCurrentUser(session)
-  }
-
-  const fetchClients = async () => {
-    const { data, error } = await supabase.from("clients").select("id, name")
-    if (error) {
-      console.error("Failed to fetch clients:", error.message)
-    } else {
-      setClients(data ?? [])
+    const fetchUser = async () => {
+      const session = await getUserSession()
+      setCurrentUser(session)
     }
-  }
 
-  fetchUser()
-  fetchClients()
-}, [])
+    const fetchClients = async () => {
+      const { data, error } = await supabase.from("clients").select("id, name")
+      if (error) {
+        console.error("Failed to fetch clients:", error.message)
+      } else {
+        setClientsList(data ?? []) // Change setClients to setClientsList
+      }
+    }
 
+    fetchUser()
+    fetchClients()
+  }, [])
 
   // Fetch users from Supabase
   const fetchUsers = useCallback(async () => {
@@ -105,7 +105,7 @@ export default function UsersPage() {
         searchQuery === "" ||
         user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        getClientNameById(user.clientId).toLowerCase().includes(searchQuery.toLowerCase())
+        (user.clients?.name || "").toLowerCase().includes(searchQuery.toLowerCase()) // Replace getClientNameById with user.clients?.name
 
       // Apply status filter
       const matchesStatus = statusFilter === "all" || user.status === statusFilter
@@ -133,6 +133,7 @@ export default function UsersPage() {
     setFormData({
       name: "",
       email: "",
+      password: "",
       role: "client",
       status: "active",
       clientId: "none",
@@ -140,45 +141,50 @@ export default function UsersPage() {
     setEditingUser(null)
   }
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
 
-  // Enkripsi password hanya jika user baru
-  let password = editingUser?.password || "placeholder"
+    let password = formData.password
 
-  // Enkripsi password hanya saat create user (bukan update)
-  if (!editingUser) {
-    const salt = await bcrypt.genSalt(10)
-    password = await bcrypt.hash(password, salt)
+    // For new users, password is required
+    if (!editingUser && !password) {
+      alert("Password is required for new users")
+      return
+    }
+
+    // Hash password if provided
+    if (password) {
+      const salt = await bcrypt.genSalt(10)
+      password = await bcrypt.hash(password, salt)
+    }
+
+    const userPayload = {
+      name: formData.name,
+      email: formData.email,
+      role: formData.role,
+      status: formData.status,
+      clientId: formData.clientId === "none" ? undefined : Number(formData.clientId),
+      ...(password && { password }), // Only include password if provided
+    }
+
+    if (editingUser) {
+      const updatedUser = await updateUser(editingUser.id, userPayload)
+      if (updatedUser) fetchUsers()
+    } else {
+      const newUser = await createUser(userPayload as Omit<User, "id" | "lastUpdated">)
+      if (newUser) fetchUsers()
+    }
+
+    setIsDialogOpen(false)
+    resetForm()
   }
-
-  const userPayload = {
-    name: formData.name,
-    email: formData.email,
-    role: formData.role,
-    status: formData.status,
-    clientId: formData.clientId === "none" ? undefined : Number(formData.clientId),
-    password, // yang sudah di-hash
-  }
-
-  if (editingUser) {
-    const updatedUser = await updateUser(editingUser.id, userPayload)
-    if (updatedUser) fetchUsers()
-  } else {
-    const newUser = await createUser(userPayload as Omit<User, "id" | "lastUpdated">)
-    if (newUser) fetchUsers()
-  }
-
-  setIsDialogOpen(false)
-  resetForm()
-}
-
 
   const handleEdit = (user: User) => {
     setEditingUser(user)
     setFormData({
       name: user.name,
       email: user.email,
+      password: "", // Don't populate password for security
       role: user.role,
       status: user.status,
       clientId: String(user.clientId) || "none",
@@ -283,7 +289,22 @@ const handleSubmit = async (e: React.FormEvent) => {
                         disabled={!!editingUser} // Disable email edit for existing users
                       />
                     </div>
-                    {/* Password field removed as it should be managed by Supabase Auth */}
+                    <div>
+                      <Label htmlFor="password">
+                        Password {!editingUser && <span className="text-red-500">*</span>}
+                        {editingUser && (
+                          <span className="text-sm text-muted-foreground">(leave blank to keep current)</span>
+                        )}
+                      </Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        required={!editingUser}
+                        placeholder={editingUser ? "Enter new password to change" : "Enter password"}
+                      />
+                    </div>
                     <div>
                       <Label htmlFor="role">Role</Label>
                       <Select
@@ -325,8 +346,9 @@ const handleSubmit = async (e: React.FormEvent) => {
                         </SelectTrigger>
                         <SelectContent className="max-h-60 overflow-y-auto">
                           <SelectItem value="none">None</SelectItem>
-                          {clients.map((client) => (
-                             <SelectItem key={client.id} value={String(client.id)}>
+                          {clientsList.map((client) => (
+                            // Change clients to clientsList
+                            <SelectItem key={client.id} value={String(client.id)}>
                               {client.name}
                             </SelectItem>
                           ))}

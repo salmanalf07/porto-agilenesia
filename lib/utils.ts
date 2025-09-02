@@ -133,3 +133,86 @@ export function extractFilePathFromSupabaseUrl(url: string, bucket = "project-im
     return null
   }
 }
+
+// Legacy Google Drive functions (keeping for backward compatibility)
+export function convertGoogleDriveUrl(url: string): string {
+  if (!url) return ""
+
+  // If it's already a direct image URL, return as is
+  if (
+    url.includes("drive.google.com/uc?") ||
+    url.includes("googleusercontent.com") ||
+    !url.includes("drive.google.com")
+  ) {
+    return url
+  }
+
+  // Extract file ID from various Google Drive URL formats
+  const fileId = extractGoogleDriveFileId(url)
+  if (!fileId) return url
+
+  // Convert to direct access URL
+  return `https://drive.google.com/uc?export=view&id=${fileId}`
+}
+
+export function extractGoogleDriveFileId(url: string): string | null {
+  if (!url) return null
+
+  // Pattern 1: /file/d/FILE_ID/view
+  let match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+  if (match) return match[1]
+
+  // Pattern 2: /open?id=FILE_ID
+  match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/)
+  if (match) return match[1]
+
+  // Pattern 3: /document/d/FILE_ID/edit
+  match = url.match(/\/document\/d\/([a-zA-Z0-9_-]+)/)
+  if (match) return match[1]
+
+  return null
+}
+
+export function isValidImageUrl(url: string): boolean {
+  if (!url) return false
+
+  // Check for common image extensions
+  const imageExtensions = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i
+  if (imageExtensions.test(url)) return true
+
+  // Check for known image hosting domains
+  const imageHosts = [
+    "images.unsplash.com",
+    "cdn.pixabay.com",
+    "images.pexels.com",
+    "drive.google.com",
+    "googleusercontent.com",
+    "imgur.com",
+    "cloudinary.com",
+  ]
+
+  return imageHosts.some((host) => url.includes(host))
+}
+
+export function getGoogleDriveInstructions(): string[] {
+  return [
+    "Upload your image to Google Drive",
+    "Right-click the image and select 'Share'",
+    "Click 'Change to anyone with the link'",
+    "Set access to 'Viewer' (not Editor)",
+    "Click 'Copy link' and paste it here",
+  ]
+}
+
+export function getAlternativeGoogleDriveUrls(originalUrl: string): string[] {
+  const fileId = extractGoogleDriveFileId(originalUrl)
+  if (!fileId) return [originalUrl]
+
+  return [
+    `https://drive.google.com/uc?export=view&id=${fileId}`,
+    `https://drive.google.com/uc?id=${fileId}`,
+    `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`,
+    `https://lh3.googleusercontent.com/d/${fileId}`,
+    originalUrl,
+  ]
+}

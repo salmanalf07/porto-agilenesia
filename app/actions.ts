@@ -15,7 +15,7 @@ export async function login(formData: FormData) {
   // Query ke Supabase
   const { data: users, error } = await supabase
     .from("users")
-    .select("id, email, password, role")
+    .select("id, email, password, role, name, status, clientId")
     .eq("email", email)
     .single() // karena hanya ingin ambil 1
 
@@ -32,13 +32,25 @@ export async function login(formData: FormData) {
     return { error: "Password salah" }
   }
 
-  // Simpan session di cookie
-  cookies().set(SESSION_COOKIE_NAME, JSON.stringify({ id: users.id, role: users.role }), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 24,
-    path: "/",
-  })
+  // Simpan session di cookie dengan data lengkap
+  cookies().set(
+    SESSION_COOKIE_NAME,
+    JSON.stringify({
+      id: users.id,
+      role: users.role,
+      name: users.name,
+      email: users.email,
+      status: users.status,
+      clientId: users.clientId,
+      password: users.password, // Include for profile updates
+    }),
+    {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 60 * 24,
+      path: "/",
+    },
+  )
 
   console.log(`✅ Login berhasil: ${email}, role: ${users.role}`)
   redirect("/")
@@ -56,15 +68,15 @@ export async function getUserSession(): Promise<User | null> {
     return null
   }
   try {
-    const { id, role } = JSON.parse(session)
+    const userData = JSON.parse(session)
     // In a real app, you'd validate the session ID against a database
     const { data: users, error } = await supabase
       .from("users")
-      .select("id, role")
-      .eq("id", id)
-      .eq("role", role)
+      .select("id, role, name, email, status, clientId, password, lastUpdated")
+      .eq("id", userData.id)
+      .eq("role", userData.role)
       .single() // karena hanya ingin ambil 1
-    // const user = users.find((u) => u.id === id && u.role === role)
+
     return users || null
   } catch (error) {
     console.error("Failed to parse session cookie:", error)

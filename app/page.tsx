@@ -360,7 +360,7 @@ export default function LandingPage() {
                                 alt={project.title}
                                 width={400}
                                 height={200}
-                                className="object-cover w-full h-48 transition-transform duration-300"
+                                className="object-contain w-full h-48 transition-transform duration-300 bg-muted/20"
                               />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                               {user?.role === "admin" && project.status !== "published" && (

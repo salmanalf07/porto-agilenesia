@@ -75,7 +75,7 @@ export default function PortfolioPage() {
         .order("lastUpdated", { ascending: false })
 
       if (error) {
-        // console.error("Error fetching projects:", error)
+        console.error("Error fetching projects:", error)
       } else if (data) {
         const transformed = data.map((project) => ({
           ...project,
@@ -92,7 +92,7 @@ export default function PortfolioPage() {
     const fetchClients = async () => {
       const { data, error } = await supabase.from("clients").select("id, name")
       if (error) {
-        // console.error("Failed to fetch clients:", error.message)
+        console.error("Failed to fetch clients:", error.message)
       } else {
         setClients(data ?? [])
       }
@@ -136,22 +136,22 @@ export default function PortfolioPage() {
     setIsDeleting(projectId)
     
     try {
-      // console.log("🗑️ Attempting to delete project:", projectId)
+      console.log("🗑️ Attempting to delete project:", projectId)
       const success = await deleteProject(projectId)
       
       if (success) {
-        // console.log("✅ Project deleted successfully")
+        console.log("✅ Project deleted successfully")
         // Remove from local state
         setProjects(projects.filter((project) => project.id !== projectId))
         
         // Show success message (you can replace with toast notification)
         alert("Project deleted successfully!")
       } else {
-        // console.error("❌ Failed to delete project")
+        console.error("❌ Failed to delete project")
         alert("Failed to delete project. Please try again.")
       }
     } catch (error) {
-      // console.error("❌ Error deleting project:", error)
+      console.error("❌ Error deleting project:", error)
       alert("An error occurred while deleting the project.")
     } finally {
       setIsDeleting(null)

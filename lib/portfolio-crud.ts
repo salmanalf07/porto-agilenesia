@@ -7,7 +7,7 @@ export async function getAllProjects() {
   const { data, error } = await supabase.from("projects").select("*").order("lastUpdated", { ascending: false })
 
   if (error) {
-    // console.error("❌ Failed to fetch projects:", error.message)
+    console.error("❌ Failed to fetch projects:", error.message)
     throw error
   }
 
@@ -23,7 +23,7 @@ export async function getPublishedProjects() {
     .order("lastUpdated", { ascending: false })
 
   if (error) {
-    // console.error("❌ Failed to fetch published projects:", error.message)
+    console.error("❌ Failed to fetch published projects:", error.message)
     throw error
   }
 
@@ -35,7 +35,7 @@ export async function getProjectById(id: string): Promise<Project | null> {
   const { data, error } = await supabase.from("projects").select("*, clients(id, name, logoUrl)").eq("id", id).single()
 
   if (error) {
-    // console.error("Error fetching project by ID:", error)
+    console.error("Error fetching project by ID:", error)
     return null
   }
   return data as Project
@@ -66,7 +66,7 @@ export async function createProject(project: any) {
   const { data, error } = await supabase.from("projects").insert([projectData]).select().single()
 
   if (error) {
-    // console.error("❌ Failed to insert project:", error.message)
+    console.error("❌ Failed to insert project:", error.message)
     throw error
   }
 
@@ -76,17 +76,17 @@ export async function createProject(project: any) {
 // Update an existing portfolio project
 export async function updateProject(id: string, projectData: any): Promise<Project | null> {
   try {
-    // console.log("🔄 Starting project update for ID:", id)
+    console.log("🔄 Starting project update for ID:", id)
     
     // Get current project to handle image cleanup
     const currentProject = await getProjectById(id)
     
     if (!currentProject) {
-      // console.error("❌ Current project not found")
+      console.error("❌ Current project not found")
       return null
     }
 
-    // console.log("📄 Current project data:", currentProject)
+    console.log("📄 Current project data:", currentProject)
 
     // Prepare update data
     const updateData = {
@@ -107,21 +107,21 @@ export async function updateProject(id: string, projectData: any): Promise<Proje
       lastUpdated: new Date().toISOString(),
     }
 
-    // console.log("📝 Update data prepared:", updateData)
+    console.log("📝 Update data prepared:", updateData)
 
     // Update the project in database
     const { data, error } = await supabase.from("projects").update(updateData).eq("id", id).select().single()
 
     if (error) {
-      // console.error("❌ Error updating project:", error)
+      console.error("❌ Error updating project:", error)
       return null
     }
 
-    // console.log("✅ Project updated successfully:", data)
+    console.log("✅ Project updated successfully:", data)
 
     // Clean up old images after successful update
     try {
-      // console.log("🧹 Starting image cleanup...")
+      console.log("🧹 Starting image cleanup...")
       
       // Parse old gallery images
       let oldGalleryImages: any[] = []
@@ -129,7 +129,7 @@ export async function updateProject(id: string, projectData: any): Promise<Proje
         try {
           oldGalleryImages = JSON.parse(currentProject.galleryImages)
         } catch (e) {
-          // console.error("Error parsing old gallery images:", e)
+          console.error("Error parsing old gallery images:", e)
         }
       } else if (Array.isArray(currentProject.galleryImages)) {
         oldGalleryImages = currentProject.galleryImages
@@ -141,8 +141,8 @@ export async function updateProject(id: string, projectData: any): Promise<Proje
         newGalleryImages = projectData.galleryImages
       }
 
-      // console.log("🖼️ Old gallery images:", oldGalleryImages)
-      // console.log("🖼️ New gallery images:", newGalleryImages)
+      console.log("🖼️ Old gallery images:", oldGalleryImages)
+      console.log("🖼️ New gallery images:", newGalleryImages)
 
       // Extract URLs from old and new images
       const oldUrls = oldGalleryImages
@@ -153,20 +153,20 @@ export async function updateProject(id: string, projectData: any): Promise<Proje
         .map((img) => (typeof img === "string" ? img : img?.url))
         .filter(Boolean)
 
-      // console.log("🔗 Old URLs:", oldUrls)
-      // console.log("🔗 New URLs:", newUrls)
+      console.log("🔗 Old URLs:", oldUrls)
+      console.log("🔗 New URLs:", newUrls)
 
       // Find images that were removed (exist in old but not in new)
       const removedUrls = oldUrls.filter((url) => !newUrls.includes(url))
       
-      // console.log("🗑️ URLs to be removed:", removedUrls)
+      console.log("🗑️ URLs to be removed:", removedUrls)
 
       // Delete removed images from storage
       for (const url of removedUrls) {
         if (url && url.includes("supabase")) {
-          // console.log("🗑️ Deleting image:", url)
+          console.log("🗑️ Deleting image:", url)
           const deleteResult = await deleteImageFromSupabase(url)
-          // console.log("🗑️ Delete result:", deleteResult)
+          console.log("🗑️ Delete result:", deleteResult)
         }
       }
 
@@ -179,20 +179,20 @@ export async function updateProject(id: string, projectData: any): Promise<Proje
         oldCoachingImage !== newCoachingImage &&
         oldCoachingImage.includes("supabase")
       ) {
-        // console.log("🗑️ Deleting old coaching image:", oldCoachingImage)
+        console.log("🗑️ Deleting old coaching image:", oldCoachingImage)
         const deleteResult = await deleteImageFromSupabase(oldCoachingImage)
-        // console.log("🗑️ Coaching image delete result:", deleteResult)
+        console.log("🗑️ Coaching image delete result:", deleteResult)
       }
 
-      // console.log("✅ Image cleanup completed")
+      console.log("✅ Image cleanup completed")
     } catch (cleanupError) {
-      // console.error("⚠️ Error during image cleanup (non-critical):", cleanupError)
+      console.error("⚠️ Error during image cleanup (non-critical):", cleanupError)
       // Don't fail the update if cleanup fails
     }
 
     return data as Project
   } catch (error) {
-    // console.error("❌ Error in updateProject:", error)
+    console.error("❌ Error in updateProject:", error)
     return null
   }
 }
@@ -200,23 +200,23 @@ export async function updateProject(id: string, projectData: any): Promise<Proje
 // Delete a portfolio project
 export async function deleteProject(id: string): Promise<boolean> {
   try {
-    // console.log("🗑️ Starting project deletion for ID:", id)
+    console.log("🗑️ Starting project deletion for ID:", id)
     
     // Get project data first to clean up images
     const project = await getProjectById(id)
 
     if (!project) {
-      // console.error("❌ Project not found for deletion")
+      console.error("❌ Project not found for deletion")
       return false
     }
 
-    // console.log("📄 Project to delete:", project)
+    console.log("📄 Project to delete:", project)
 
     // Delete coaching image (main image)
     if (project.coachingImageUrl && project.coachingImageUrl.includes("supabase")) {
-      // console.log("🗑️ Deleting coaching image:", project.coachingImageUrl)
+      console.log("🗑️ Deleting coaching image:", project.coachingImageUrl)
       const deleteResult = await deleteImageFromSupabase(project.coachingImageUrl)
-      // console.log("🗑️ Coaching image delete result:", deleteResult)
+      console.log("🗑️ Coaching image delete result:", deleteResult)
     }
 
     // Delete gallery images
@@ -225,36 +225,36 @@ export async function deleteProject(id: string): Promise<boolean> {
       try {
         galleryImages = JSON.parse(project.galleryImages)
       } catch (e) {
-        // console.error("Error parsing gallery images for deletion:", e)
+        console.error("Error parsing gallery images for deletion:", e)
       }
     } else if (Array.isArray(project.galleryImages)) {
       galleryImages = project.galleryImages
     }
 
-    // console.log("🖼️ Gallery images to delete:", galleryImages)
+    console.log("🖼️ Gallery images to delete:", galleryImages)
 
     for (const image of galleryImages) {
       const url = typeof image === "string" ? image : image?.url
       if (url && url.includes("supabase")) {
-        // console.log("🗑️ Deleting gallery image:", url)
+        console.log("🗑️ Deleting gallery image:", url)
         const deleteResult = await deleteImageFromSupabase(url)
-        // console.log("🗑️ Gallery image delete result:", deleteResult)
+        console.log("🗑️ Gallery image delete result:", deleteResult)
       }
     }
 
     // Delete project record from database
-    // console.log("🗑️ Deleting project record from database...")
+    console.log("🗑️ Deleting project record from database...")
     const { error } = await supabase.from("projects").delete().eq("id", id)
 
     if (error) {
-      // console.error("❌ Error deleting project record:", error)
+      console.error("❌ Error deleting project record:", error)
       return false
     }
 
-    // console.log("✅ Project deleted successfully")
+    console.log("✅ Project deleted successfully")
     return true
   } catch (error) {
-    // console.error("❌ Error in deleteProject:", error)
+    console.error("❌ Error in deleteProject:", error)
     return false
   }
 }

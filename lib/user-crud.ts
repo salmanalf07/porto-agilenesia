@@ -6,7 +6,10 @@ import type { User } from "./data" // Menggunakan interface User yang sudah ada
  * @returns Array of User objects or an empty array if an error occurs.
  */
 export async function getUsers(): Promise<User[]> {
-  const { data, error } = await supabase.from("users").select("*, clients(name)").order("lastUpdated", { ascending: false })
+  const { data, error } = await supabase
+    .from("users")
+    .select("*, clients(name)")
+    .order("lastUpdated", { ascending: false })
   if (error) {
     console.error("Error fetching users:", error)
     return []
@@ -67,6 +70,28 @@ export async function deleteUser(id: string): Promise<boolean> {
   const { error } = await supabase.from("users").delete().eq("id", id)
   if (error) {
     console.error("Error deleting user:", error)
+    return false
+  }
+  return true
+}
+
+/**
+ * Update password untuk user tertentu
+ * @param id ID pengguna yang akan diupdate passwordnya
+ * @param newPassword Password baru yang sudah di-hash
+ * @returns True jika berhasil, false jika gagal
+ */
+export async function updateUserPassword(id: string, newPassword: string): Promise<boolean> {
+  const { error } = await supabase
+    .from("users")
+    .update({
+      password: newPassword,
+      lastUpdated: new Date().toISOString(),
+    })
+    .eq("id", id)
+
+  if (error) {
+    console.error("Error updating user password:", error)
     return false
   }
   return true
