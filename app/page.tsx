@@ -225,9 +225,7 @@ export default function LandingPage() {
                 </FadeInUp>
                 <FadeInUp delay={0.2}>
                   <p className="text-body-large text-medium-contrast max-w-2xl">
-                    {user?.role === "client"
-                      ? `Welcome back! Explore your coaching portfolio and see how Agilenesia is helping ${getClientName(featuredProject)} achieve transformative results.`
-                      : `Discover how Agilenesia empowers clients like ${getClientName(featuredProject)} to achieve transformative results through expert agile coaching and strategic guidance.`}
+                    Discover how Agilenesia empowers clients like Tumbuh X to achieve transformative results through expert agile coaching and strategic guidance.
                   </p>
                 </FadeInUp>
                 <FadeInUp delay={0.4}>
